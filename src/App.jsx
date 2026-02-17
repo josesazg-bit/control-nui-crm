@@ -35,12 +35,13 @@ const MESES = ["AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE", "ENE
 const ETAPAS = ["2do Pedido", "3er Pedido", "4to Pedido", "Histórico"];
 const INITIAL_DATA = [];
 
-// --- PARSER CSV ---
+// --- PARSER CSV (EL TRADUCTOR) ---
 const parseCSV = (text, fileName) => {
   const lines = text.split('\n');
   const result = [];
   const nameUpper = fileName.toUpperCase();
   let etapaArchivo = null;
+  // Intenta adivinar la etapa por el nombre del archivo (esto lo mejoraremos con tu ERP)
   if (nameUpper.includes("2 PEDIDO") || nameUpper.includes("PEDIDO 2")) etapaArchivo = "2do Pedido";
   if (nameUpper.includes("3 PEDIDO") || nameUpper.includes("PEDIDO 3")) etapaArchivo = "3er Pedido";
   if (nameUpper.includes("4 PEDIDO") || nameUpper.includes("PEDIDO 4")) etapaArchivo = "4to Pedido";
@@ -547,7 +548,7 @@ export default function App() {
             </div>
         )}
 
-        {/* DASHBOARD ANALÍTICO CON FILTRO DE ZONA */}
+        {/* DASHBOARD ANALÍTICO CON GRAFICO RESTAURADO */}
         {activeTab === 'dashboard' && (
             <div className="flex flex-col gap-8 animate-in fade-in duration-300 overflow-y-auto pb-8">
                 {/* FILTRO DE ZONA */}
@@ -560,15 +561,38 @@ export default function App() {
                     </select>
                 </div>
 
+                {/* KPI PRINCIPAL Y GRAFICO RESTAURADO */}
                 <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
                     <div className="flex justify-between items-start mb-8 relative z-10">
                         <div><h3 className="font-black text-2xl text-slate-800 uppercase tracking-tight flex items-center gap-3"><Layers className="text-indigo-600"/> Efectividad Histórica ({filterZone})</h3><p className="text-slate-500 font-medium mt-1">Analizando supervivencia desde {historicalKPIs.steps[0].month} hasta {currentMonth}.</p></div>
                         <div className="text-right bg-indigo-50 p-3 rounded-xl border border-indigo-100"><p className="text-xs font-bold text-indigo-400 uppercase">Retención Acumulada</p><p className="text-3xl font-black text-indigo-600">{historicalKPIs.steps[historicalKPIs.steps.length - 1].retentionBase}%</p></div>
                     </div>
-                    <div className="flex items-start justify-between gap-2 relative z-10 px-2 overflow-x-auto pb-4">
+                    
+                    {/* PASOS VISUALES */}
+                    <div className="flex items-start justify-between gap-2 relative z-10 px-2 overflow-x-auto pb-8">
                         {historicalKPIs.steps.map((step, idx) => ( <RetentionStep key={idx} label={step.month} count={step.count} percent={step.retentionBase} conversionRate={step.conversion} isLast={idx === historicalKPIs.steps.length - 1}/> ))}
                     </div>
+
+                    {/* GRÁFICO DE ÁREA RESTAURADO */}
+                    <div className="h-64 w-full mt-4">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={historicalKPIs.steps}>
+                                <defs>
+                                    <linearGradient id="colorRetention" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <XAxis dataKey="month" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
+                                <YAxis hide />
+                                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
+                                <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                                <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorRetention)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <KpiCard title={`Activos en ${currentMonth}`} value={historicalKPIs.activeInMonth} subtext={`Clientes gestionables en ${filterZone}`} color="indigo"/>
                     <KpiCard title="Cartera en Riesgo" value={historicalKPIs.moraInMonth} subtext="Detectados en Mora" color="red"/>
