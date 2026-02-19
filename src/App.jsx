@@ -3,11 +3,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, writeBatch } from 'firebase/firestore';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { 
   Search, TrendingUp, Activity, Save, Edit, UserPlus, CheckCircle, XCircle,
-  Layout, List, Loader2, Trash2, Database, Calendar, Layers, Wifi, ShieldCheck, Fingerprint, FileUp, MoreHorizontal, DollarSign, Download, Filter, Phone, Clock
+  Layout, List, Loader2, Trash2, Database, Calendar, Layers, Wifi, ShieldCheck, Fingerprint, FileUp, DollarSign, Download, Filter, Phone, Clock
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
@@ -35,47 +35,69 @@ const MESES = ["AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE", "ENE
 const ETAPAS = ["2do Pedido", "3er Pedido", "4to Pedido", "Histórico"];
 const INITIAL_DATA = [];
 
-// --- PARSER CSV (EL TRADUCTOR) ---
-const parseCSV = (text, fileName) => {
+// --- PARSER CSV INTELIGENTE (ADAPTADO EXACTAMENTE A TU ERP) ---
+const parseCSV = (text) => {
   const lines = text.split('\n');
-  const result = [];
-  const nameUpper = fileName.toUpperCase();
-  let etapaArchivo = null;
-  // Intenta adivinar la etapa por el nombre del archivo (esto lo mejoraremos con tu ERP)
-  if (nameUpper.includes("2 PEDIDO") || nameUpper.includes("PEDIDO 2")) etapaArchivo = "2do Pedido";
-  if (nameUpper.includes("3 PEDIDO") || nameUpper.includes("PEDIDO 3")) etapaArchivo = "3er Pedido";
-  if (nameUpper.includes("4 PEDIDO") || nameUpper.includes("PEDIDO 4")) etapaArchivo = "4to Pedido";
+  if (lines.length < 2) return [];
+
+  // Encontrar índices de columnas basados en tus NUEVOS encabezados
+  const headers = lines[0].split(/,|;/).map(h => h.trim().toUpperCase().replace(/"/g, ''));
   
-  let mesArchivo = null;
-  MESES.forEach(m => { if (nameUpper.includes(m)) mesArchivo = m; });
+  const idxCodigo = headers.findIndex(h => h === 'CODIGO' || h === 'CÓDIGO' || h.includes('CÓDIGO'));
+  const idxNombre = headers.findIndex(h => h.includes('NOMBRE'));
+  const idxZona = headers.findIndex(h => h === 'ZONA' || h.includes('ZONA'));
+  const idxSaldo = headers.findIndex(h => h.includes('SALDO ACTUAL'));
+  const idxStatus = headers.findIndex(h => h.includes('STATUS'));
+  const idxCumple = headers.findIndex(h => h.includes('REGALIA DE CUMPLEAÑOS') || h.includes('CUMPLEAÑOS'));
+  
+  // Detección EXCLUSIVA de columnas de FACTURACIÓN (Ignoramos REGALÍA)
+  const idxMes1 = headers.findIndex(h => h.includes('1º MES FACTURACION') || h.includes('1° MES FACTURACION'));
+  const idxMes2 = headers.findIndex(h => h.includes('2º MES FACTURACION') || h.includes('2° MES FACTURACION'));
+  const idxMes3 = headers.findIndex(h => h.includes('3º MES FACTURACION') || h.includes('3° MES FACTURACION'));
+  const idxMes4 = headers.findIndex(h => h.includes('4º MES FACTURACION') || h.includes('4° MES FACTURACION'));
 
-  if (!etapaArchivo || !mesArchivo) return []; 
+  const result = [];
 
-  lines.forEach(line => {
-    const cols = line.replace(/\r/g, '').split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-    if (cols.length < 5) return;
-    let codigo = null, nombre = null, saldo = 0;
+  for (let i = 1; i < lines.length; i++) {
+    // Regex para separar por comas o punto y coma ignorando las que están dentro de comillas
+    const row = lines[i].replace(/\r/g, '').split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)|;(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+    if (row.length < 5) continue;
+
+    const getVal = (idx) => idx !== -1 && row[idx] ? row[idx].replace(/"/g, '').trim() : '';
+
+    const codigo = getVal(idxCodigo);
+    const nombre = getVal(idxNombre);
     
-    const c1 = cols[1]?.replace(/"/g, '').trim();
-    if (c1 && !isNaN(c1) && c1.length > 5) { 
-        codigo = c1; nombre = cols[2]; 
-        const s = cols[7]?.replace(/"/g, '').trim();
-        if(!isNaN(parseFloat(s))) saldo = parseFloat(s);
-    }
-    if (!codigo) {
-        const c2 = cols[2]?.replace(/"/g, '').trim();
-        if (c2 && !isNaN(c2) && c2.length > 5) { codigo = c2; nombre = cols[3]; }
-    }
     if (codigo && nombre) {
+        // Lógica Automática de Etapa:
+        let etapaDetectada = '2do Pedido'; // Default
+        
+        const v1 = getVal(idxMes1);
+        const v2 = getVal(idxMes2);
+        const v3 = getVal(idxMes3);
+        const v4 = getVal(idxMes4);
+
+        // Si tiene facturación en Mes 4 -> Histórico
+        // Si tiene facturación en Mes 3 -> Va para 4to Pedido
+        // Si tiene facturación en Mes 2 -> Va para 3er Pedido
+        if (v4 && v4 !== '0' && v4 !== '-') etapaDetectada = 'Histórico';
+        else if (v3 && v3 !== '0' && v3 !== '-') etapaDetectada = '4to Pedido';
+        else if (v2 && v2 !== '0' && v2 !== '-') etapaDetectada = '3er Pedido';
+        else if (v1 && v1 !== '0' && v1 !== '-') etapaDetectada = '2do Pedido';
+
+        const saldoLimpio = parseFloat(getVal(idxSaldo).replace(/[$,]/g, '')) || 0;
+
         result.push({
             codigo,
-            nombre: nombre.replace(/"/g, '').trim(),
-            saldo,
-            historyEntry: { [mesArchivo]: etapaArchivo },
-            comentario: cols[cols.length-1]?.replace(/"/g, '') || ''
+            nombre,
+            zona: getVal(idxZona),
+            saldo: saldoLimpio,
+            estado: getVal(idxStatus) || 'ACT',
+            fechaNacimiento: getVal(idxCumple),
+            etapaSugestida: etapaDetectada
         });
     }
-  });
+  }
   return result;
 };
 
@@ -97,521 +119,5 @@ const RetentionStep = ({ label, count, percent, isLast, conversionRate }) => {
   else if (conversionRate < 80) color = 'bg-amber-500';
 
   return (
-    <div className="flex flex-col items-center flex-1 relative z-10">
-      <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center text-white font-bold text-sm shadow-md mb-3 ${color} border-4 border-white ring-2 ring-slate-100`}>
-        <span>{percent}%</span>
-      </div>
-      <p className="text-xs font-bold text-slate-700 uppercase tracking-tight">{label}</p>
-      <p className="text-[10px] text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full mt-1">{count} Clientes</p>
-      {!isLast && (
-        <div className="absolute top-7 left-1/2 w-full h-1 bg-slate-200 -z-10">
-            <div className="absolute top-[-10px] left-1/2 -translate-x-1/2 bg-white px-1 text-[9px] text-slate-400 font-bold border border-slate-100 rounded">{conversionRate}% Pasan</div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default function App() {
-  const [activeTab, setActiveTab] = useState('gestion'); 
-  const [currentMonth, setCurrentMonth] = useState('FEBRERO'); 
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const [syncStatus, setSyncStatus] = useState('synced');
-  const [lastSaved, setLastSaved] = useState(null);
-  
-  // Filtros y Estados Nuevos
-  const [searchTerm, setSearchTerm] = useState('');
-  const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState({});
-  const [filterZone, setFilterZone] = useState('TODAS'); // Nuevo Filtro de Zona
-
-  useEffect(() => {
-    signInAnonymously(auth).catch(console.error);
-    return onAuthStateChanged(auth, setUser);
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'clients'));
-    const unsub = onSnapshot(q, snap => {
-        if (snap.empty) setData(INITIAL_DATA);
-        else {
-            const loadedData = snap.docs.map(d => ({...d.data(), id: d.id}));
-            loadedData.sort((a,b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-            setData(loadedData);
-        }
-        setLoading(false);
-        setLastSaved(new Date()); 
-    }, (error) => { console.error(error); setSyncStatus('error'); setLoading(false); });
-    return () => unsub();
-  }, [user]);
-
-  const showNotification = (msg, type='success') => {
-    setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // --- FUNCIÓN EXPORTAR EXCEL (CSV) ---
-  const handleExportExcel = () => {
-    if (data.length === 0) return showNotification("No hay datos para exportar", "error");
+    <div className="flex flex-col items-center flex-1 relative z-1
     
-    // Crear cabeceras
-    let csvContent = "Codigo,Nombre,Zona,Saldo,Estado,Etapa Actual,Cumpleaños,Gestion Efectiva,Fecha FollowUp,Comentarios\n";
-    
-    // Rellenar filas
-    data.forEach(row => {
-        const cleanName = row.nombre ? row.nombre.replace(/,/g, "") : "";
-        const cleanComment = row.comentario ? row.comentario.replace(/,/g, " ") : "";
-        // Usar la etapa actual del mes seleccionado o la última registrada
-        const currentStage = row.history?.[currentMonth] || row.etapa || "";
-        
-        csvContent += `${row.codigo},${cleanName},${row.zona},${row.saldo},${row.estado},${currentStage},${row.fechaNacimiento || ''},${row.gestionEfectiva || ''},${row.fechaFollowUp || ''},${cleanComment}\n`;
-    });
-
-    // Crear blob y descargar
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Reporte_Clientes_${currentMonth}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showNotification("Reporte descargado con éxito");
-  };
-
-  const handleFileUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (!files.length) return;
-    setIsImporting(true);
-    setSyncStatus('saving');
-    const batch = writeBatch(db);
-    let count = 0;
-    const tempMap = new Map();
-    data.forEach(d => tempMap.set(d.codigo, d));
-
-    for (const file of files) {
-        const text = await file.text();
-        const records = parseCSV(text, file.name);
-        records.forEach(rec => {
-            const existing = tempMap.get(rec.codigo) || { history: {} };
-            const newHistory = { ...existing.history, ...rec.historyEntry };
-            const finalName = rec.nombre.length > (existing.nombre || "").length ? rec.nombre : existing.nombre;
-            const merged = { ...existing, ...rec, nombre: finalName, history: newHistory, etapa: newHistory[MESES[MESES.length-1]] || rec.historyEntry[Object.keys(rec.historyEntry)[0]] };
-            delete merged.historyEntry;
-            tempMap.set(rec.codigo, merged);
-        });
-    }
-    tempMap.forEach((val, key) => {
-        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'clients', key);
-        batch.set(ref, val);
-        count++;
-    });
-    try { await batch.commit(); setSyncStatus('synced'); showNotification(`Base actualizada: ${count} verificado.`); } 
-    catch (e) { setSyncStatus('error'); showNotification("Error al importar", "error"); } 
-    finally { setIsImporting(false); }
-  };
-
-  const handleAdvanceStage = async (client) => {
-      const currentIdx = MESES.indexOf(currentMonth);
-      if (currentIdx >= MESES.length - 1) return showNotification("No hay mes siguiente", "error");
-      const nextMonth = MESES[currentIdx + 1];
-      const nextStageMap = { "2do Pedido": "3er Pedido", "3er Pedido": "4to Pedido", "4to Pedido": "Histórico" };
-      const stageNow = client.history?.[currentMonth];
-      if (!stageNow || stageNow === "Histórico") return;
-      const nextStage = nextStageMap[stageNow];
-      
-      if (window.confirm(`¿Confirmar pedido de ${client.nombre}? Pasará a ${nextStage} en ${nextMonth}.`)) {
-          setSyncStatus('saving');
-          try {
-            const newHistory = { ...client.history, [nextMonth]: nextStage };
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'clients', client.id);
-            await updateDoc(ref, { 
-                history: newHistory, 
-                etapa: nextStage, 
-                updatedAt: new Date().toISOString(),
-                // Al avanzar, asumimos gestión efectiva
-                gestionEfectiva: 'SI' 
-            });
-            setSyncStatus('synced');
-            showNotification(`Cliente avanzado a ${nextStage}.`);
-          } catch(e) { setSyncStatus('error'); }
-      }
-  };
-
-  const handleSave = async (e) => {
-    e.preventDefault();
-    if (!user) return;
-    setSyncStatus('saving');
-    try {
-        const docId = formData.codigo || Date.now().toString();
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'clients', docId);
-        let finalData = { ...formData };
-        if (editingId === 'NEW') {
-            const initialHistory = formData.history || {};
-            if (Object.keys(initialHistory).length === 0) finalData.history = { [currentMonth]: formData.etapa || '2do Pedido' };
-        }
-        await setDoc(docRef, { ...finalData, updatedAt: new Date().toISOString() }, { merge: true });
-        setSyncStatus('synced'); showNotification("Guardado."); setEditingId(null);
-    } catch (e) { setSyncStatus('error'); showNotification("Error al guardar.", "error"); }
-  };
-
-  const handleDelete = async () => {
-      if(!editingId || editingId === 'NEW') { setEditingId(null); return; }
-      if(window.confirm("¿Eliminar registro?")) {
-          setSyncStatus('saving');
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', editingId));
-          setSyncStatus('synced'); setEditingId(null); showNotification("Eliminado.");
-      }
-  };
-
-  // --- LÓGICA FILTRADA PARA DASHBOARD ---
-  const filteredData = useMemo(() => {
-      if (filterZone === 'TODAS') return data;
-      return data.filter(d => d.zona && d.zona.includes(filterZone));
-  }, [data, filterZone]);
-
-  const historicalKPIs = useMemo(() => {
-      const currentIdx = MESES.indexOf(currentMonth);
-      const startIdx = Math.max(0, currentIdx - 3);
-      const selectedMonths = MESES.slice(startIdx, currentIdx + 1);
-      const baseMonth = selectedMonths[0];
-      
-      const baseData = filteredData.filter(d => d.history && d.history[baseMonth]);
-      const totalBase = baseData.length;
-      
-      const steps = selectedMonths.map((m, i) => {
-          const count = baseData.filter(d => d.history[m]).length;
-          const retentionBase = totalBase > 0 ? Math.round((count / totalBase) * 100) : 0;
-          const prevCount = i > 0 ? baseData.filter(d => d.history[selectedMonths[i-1]]).length : totalBase;
-          const conversion = prevCount > 0 ? Math.round((count / prevCount) * 100) : 100;
-          return { month: m, count, retentionBase, conversion };
-      });
-      const activeInMonth = filteredData.filter(d => d.history && d.history[currentMonth] && d.history[currentMonth] !== 'Histórico').length;
-      const moraInMonth = filteredData.filter(d => d.history && d.history[currentMonth] && d.estado === 'MOR').length;
-      return { steps, totalBase, activeInMonth, moraInMonth };
-  }, [filteredData, currentMonth]);
-
-  // Lista de zonas únicas para el filtro
-  const uniqueZones = useMemo(() => {
-      const zones = new Set(data.map(d => d.zona).filter(Boolean));
-      return ['TODAS', ...Array.from(zones).sort()];
-  }, [data]);
-
-  // Lista global para Trello (con filtro de búsqueda)
-  const globalList = useMemo(() => {
-      return data.filter(d => {
-          const stageInMonth = d.history?.[currentMonth];
-          if (!stageInMonth) return false; 
-          const matchSearch = d.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || d.codigo.includes(searchTerm);
-          // Si estamos en dashboard se usa filteredData, pero en Trello usamos data global y búsqueda
-          return matchSearch;
-      });
-  }, [data, currentMonth, searchTerm]);
-
-  const handleNewClient = (stagePreset) => {
-      setEditingId('NEW');
-      setFormData({ 
-          codigo: '', nombre: '', zona: '', saldo: 0, estado: 'ACT', 
-          etapa: stagePreset || '2do Pedido', 
-          comentario: '', 
-          history: { [currentMonth]: stagePreset || '2do Pedido' },
-          gestionEfectiva: '', 
-          fechaFollowUp: '',
-          fechaNacimiento: ''
-      });
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-            <div className="bg-indigo-600 text-white p-2 rounded-lg"><Database size={24}/></div>
-            <div>
-                <h1 className="font-black text-xl text-slate-800 tracking-tight">CONTROL NUI</h1>
-                <div className="flex items-center gap-2 mt-0.5">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Zona Nathaly</p>
-                    <span className="text-slate-300">|</span>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">CICLO 2025-2026</p>
-                </div>
-            </div>
-        </div>
-        <div className="flex flex-col items-end">
-            <span className="text-[10px] font-black text-indigo-500 uppercase mb-1 tracking-widest">MES DE CIERRE / TRABAJO</span>
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-                {MESES.map(m => ( <button key={m} onClick={() => setCurrentMonth(m)} className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${currentMonth === m ? 'bg-white text-indigo-600 shadow-sm ring-1 ring-indigo-100' : 'text-slate-400 hover:text-slate-600'}`}>{m.substring(0,3)}</button> ))}
-            </div>
-        </div>
-        <div className="flex items-center gap-3">
-            {/* BOTÓN EXCEL */}
-            <button onClick={handleExportExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm">
-                <Download size={16}/> EXCEL
-            </button>
-            <div className="relative group">
-                <input type="file" multiple accept=".csv" onChange={handleFileUpload} className="absolute inset-0 w-full opacity-0 cursor-pointer" disabled={isImporting} />
-                <button className="bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-slate-700 transition-colors">{isImporting ? <Loader2 className="animate-spin" size={16}/> : <FileUp size={16}/>} CSV</button>
-            </div>
-            <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-                <button onClick={() => setActiveTab(activeTab === 'gestion' ? 'dashboard' : 'gestion')} className="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors">
-                    {activeTab === 'gestion' ? <Layout size={16}/> : <List size={16}/>} {activeTab === 'gestion' ? 'VER DASHBOARD' : 'TABLERO'}
-                </button>
-            </div>
-        </div>
-      </header>
-
-      {notification && <div className="fixed top-24 right-6 bg-emerald-600 text-white px-6 py-3 rounded-xl shadow-xl z-50 font-bold flex items-center gap-3 animate-in slide-in-from-right"><CheckCircle/> {notification.msg}</div>}
-
-      <main className="flex-1 w-full mx-auto p-4 pb-16 h-[calc(100vh-80px)] overflow-hidden">
-        {activeTab === 'gestion' && (
-            <div className="flex flex-col h-full gap-4">
-                {/* BARRA SUPERIOR DE KPI RÁPIDO Y BÚSQUEDA */}
-                <div className="flex items-center justify-between shrink-0">
-                    <div className="flex gap-4">
-                        <div className="bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
-                            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><UserPlus size={16}/></div>
-                            <div><p className="text-[10px] uppercase font-bold text-slate-400">Total Activos</p><p className="text-lg font-black text-slate-700">{globalList.length}</p></div>
-                        </div>
-                        <div className="relative w-64">
-                            <Search className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
-                            <input type="text" placeholder="Buscar cliente..." className="w-full pl-10 pr-4 py-2.5 text-sm bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm transition-all" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/>
-                        </div>
-                    </div>
-                    <button onClick={() => handleNewClient()} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl shadow-lg hover:bg-emerald-700 transition-transform active:scale-95 flex items-center gap-2 font-bold text-sm">
-                        <UserPlus size={18}/> NUEVO INGRESO
-                    </button>
-                </div>
-
-                {/* TABLERO KANBAN (TRELLO) */}
-                <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-                    <div className="flex h-full gap-6 min-w-max px-2">
-                        {ETAPAS.map((stage) => {
-                            const clientsInStage = globalList.filter(c => c.history[currentMonth] === stage);
-                            return (
-                                <div key={stage} className={`w-80 flex flex-col rounded-2xl ${COLORS.bgStages[stage]} border ${COLORS.borderStages[stage]} h-full transition-all duration-300`}>
-                                    <div className="p-4 flex items-center justify-between shrink-0 border-b border-white/50">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS.stages[stage]}}></div>
-                                            <h3 className="font-black text-sm text-slate-700 uppercase tracking-tight">{stage}</h3>
-                                        </div>
-                                        <span className="bg-white/60 px-2 py-0.5 rounded-md text-xs font-bold text-slate-500 shadow-sm">{clientsInStage.length}</span>
-                                    </div>
-
-                                    <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-                                        {clientsInStage.map(client => (
-                                            <div 
-                                                key={client.id} 
-                                                onClick={() => { setEditingId(client.id); setFormData(client); }} 
-                                                className={`bg-white p-4 rounded-xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 group relative animate-in fade-in zoom-in-95 ${client.gestionEfectiva === 'NO' ? 'border-l-4 border-l-red-500' : ''}`}
-                                            >
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-md flex items-center gap-1"><Fingerprint size={10}/> {client.codigo}</span>
-                                                    {client.estado === 'MOR' && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase">MORA</span>}
-                                                </div>
-                                                <h4 className="font-bold text-slate-800 text-sm leading-tight mb-3">{client.nombre}</h4>
-                                                
-                                                {/* Indicadores de Gestión */}
-                                                {client.fechaFollowUp && (
-                                                    <div className="mb-2 flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded">
-                                                        <Clock size={10}/> Follow-up: {client.fechaFollowUp}
-                                                    </div>
-                                                )}
-
-                                                <div className="flex items-center justify-between pt-3 border-t border-slate-50">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Saldo</span>
-                                                        <span className="font-mono text-xs font-bold text-slate-600 flex items-center"><DollarSign size={10}/>{client.saldo}</span>
-                                                    </div>
-                                                    {stage !== '4to Pedido' && stage !== 'Histórico' && (
-                                                        <button 
-                                                            onClick={(e) => { e.stopPropagation(); handleAdvanceStage(client); }} 
-                                                            className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors opacity-0 group-hover:opacity-100 shadow-sm"
-                                                            title="Confirmar Pedido (Avanzar)"
-                                                        >
-                                                            <CheckCircle size={16}/>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-                                        <button onClick={() => handleNewClient(stage)} className="w-full py-3 rounded-xl border-2 border-dashed border-slate-300 text-slate-400 text-xs font-bold hover:border-indigo-400 hover:text-indigo-500 hover:bg-white transition-all flex items-center justify-center gap-2">
-                                            <PlusIcon/> Agregar a {stage}
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* MODAL DE EDICIÓN MEJORADO */}
-                {editingId && (
-                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-                        <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-200">
-                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                                <div>
-                                    <h3 className="font-black text-xl text-slate-800 flex items-center gap-2">
-                                        {editingId === 'NEW' ? <UserPlus className="text-emerald-500"/> : <Edit className="text-indigo-500"/>}
-                                        {editingId === 'NEW' ? 'Nuevo Ingreso' : 'Ficha de Cliente'}
-                                    </h3>
-                                    <p className="text-xs text-slate-500 mt-1">Gestionando datos para el mes de <strong>{currentMonth}</strong></p>
-                                </div>
-                                <div className="flex gap-2">
-                                    {editingId !== 'NEW' && <button onClick={handleDelete} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Eliminar"><Trash2 size={20}/></button>}
-                                    <button onClick={() => setEditingId(null)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"><XCircle size={24}/></button>
-                                </div>
-                            </div>
-                            
-                            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-8 space-y-6">
-                                <div className="grid grid-cols-2 gap-6">
-                                    <div className="col-span-2">
-                                        <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">Nombre Completo</label>
-                                        <input required className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none font-bold text-slate-700 transition-all" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} placeholder="Ej. Juan Pérez" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">Código Cliente</label>
-                                        <input required className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none font-medium transition-all" value={formData.codigo || ''} onChange={e => setFormData({...formData, codigo: e.target.value})} placeholder="Ej. 1040..." />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">Zona / Subzona</label>
-                                        <input className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none font-medium transition-all" value={formData.zona || ''} onChange={e => setFormData({...formData, zona: e.target.value})} placeholder="Ej. Zona 1" />
-                                    </div>
-                                    
-                                    {/* NUEVO: CUMPLEAÑOS */}
-                                    <div>
-                                        <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">Fecha de Cumpleaños</label>
-                                        <input type="date" className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none font-medium text-slate-600" value={formData.fechaNacimiento || ''} onChange={e => setFormData({...formData, fechaNacimiento: e.target.value})} />
-                                    </div>
-
-                                    <div>
-                                        <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">Saldo Actual ($)</label>
-                                        <input type="number" step="0.01" className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none font-mono font-bold text-slate-700 transition-all" value={formData.saldo || 0} onChange={e => setFormData({...formData, saldo: e.target.value})} />
-                                    </div>
-                                    
-                                    {/* SECCIÓN DE GESTIÓN Y FOLLOW UP */}
-                                    <div className="col-span-2 bg-slate-50 p-5 rounded-2xl border border-slate-100">
-                                        <h4 className="text-sm font-black text-slate-700 mb-4 flex items-center gap-2"><Phone size={16} className="text-indigo-500"/> Registro de Gestión</h4>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">¿Gestión Efectiva?</label>
-                                                <select className={`w-full p-3.5 border-2 rounded-xl outline-none font-bold ${formData.gestionEfectiva === 'SI' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : formData.gestionEfectiva === 'NO' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-100'}`} value={formData.gestionEfectiva || ''} onChange={e => setFormData({...formData, gestionEfectiva: e.target.value})}>
-                                                    <option value="">-- Seleccionar --</option>
-                                                    <option value="SI">SÍ - Pedido Confirmado</option>
-                                                    <option value="NO">NO - Programar Seguimiento</option>
-                                                </select>
-                                            </div>
-                                            {/* Si gestión NO es efectiva, mostrar fecha de follow-up */}
-                                            {formData.gestionEfectiva === 'NO' && (
-                                                <div className="animate-in fade-in slide-in-from-left-2">
-                                                    <label className="text-xs font-bold uppercase text-red-400 tracking-wider block mb-2">Fecha Follow-Up</label>
-                                                    <input type="date" required className="w-full p-3.5 bg-white border-2 border-red-100 rounded-xl focus:border-red-500 outline-none font-bold text-slate-700" value={formData.fechaFollowUp || ''} onChange={e => setFormData({...formData, fechaFollowUp: e.target.value})} />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Selector de Etapa visual para Nuevo Ingreso */}
-                                    {editingId === 'NEW' && (
-                                        <div className="col-span-2 bg-indigo-50 p-5 rounded-2xl border border-indigo-100">
-                                            <label className="text-xs font-bold uppercase text-indigo-500 tracking-wider block mb-3 flex items-center gap-2"><Calendar size={14}/> Etapa Inicial en {currentMonth}</label>
-                                            <div className="flex gap-3">
-                                                {ETAPAS.slice(0,3).map(st => (
-                                                    <button key={st} type="button" onClick={() => setFormData({...formData, etapa: st, history: {[currentMonth]: st}})} 
-                                                        className={`flex-1 py-3 text-xs rounded-xl font-bold border-2 transition-all ${formData.etapa === st ? 'bg-indigo-600 text-white border-indigo-600 shadow-md transform scale-105' : 'bg-white text-indigo-400 border-indigo-100 hover:border-indigo-300'}`}>
-                                                        {st}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold uppercase text-slate-400 tracking-wider block mb-2">Bitácora / Comentarios</label>
-                                    <textarea className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-500 focus:bg-white outline-none h-32 leading-relaxed transition-all resize-none" value={formData.comentario || ''} onChange={e => setFormData({...formData, comentario: e.target.value})} placeholder="Escribe notas importantes aquí..." />
-                                </div>
-                            </form>
-                            
-                            <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-4">
-                                <button type="button" onClick={() => setEditingId(null)} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-500 hover:bg-white border border-transparent hover:border-slate-200 transition-all">Cancelar</button>
-                                <button onClick={handleSave} disabled={syncStatus === 'saving'} className="px-8 py-3 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-all flex items-center gap-2 transform active:scale-95">
-                                    {syncStatus === 'saving' ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>}
-                                    {syncStatus === 'saving' ? 'Guardando...' : 'GUARDAR CAMBIOS'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        )}
-
-        {/* DASHBOARD ANALÍTICO CON GRAFICO RESTAURADO */}
-        {activeTab === 'dashboard' && (
-            <div className="flex flex-col gap-8 animate-in fade-in duration-300 overflow-y-auto pb-8">
-                {/* FILTRO DE ZONA */}
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-                    <div className="flex items-center gap-2 text-indigo-600 font-bold uppercase text-xs tracking-wider">
-                        <Filter size={16}/> Filtrar Tablero por Zona:
-                    </div>
-                    <select className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2.5 font-bold outline-none" value={filterZone} onChange={e => setFilterZone(e.target.value)}>
-                        {uniqueZones.map(z => <option key={z} value={z}>{z}</option>)}
-                    </select>
-                </div>
-
-                {/* KPI PRINCIPAL Y GRAFICO RESTAURADO */}
-                <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm relative overflow-hidden">
-                    <div className="flex justify-between items-start mb-8 relative z-10">
-                        <div><h3 className="font-black text-2xl text-slate-800 uppercase tracking-tight flex items-center gap-3"><Layers className="text-indigo-600"/> Efectividad Histórica ({filterZone})</h3><p className="text-slate-500 font-medium mt-1">Analizando supervivencia desde {historicalKPIs.steps[0].month} hasta {currentMonth}.</p></div>
-                        <div className="text-right bg-indigo-50 p-3 rounded-xl border border-indigo-100"><p className="text-xs font-bold text-indigo-400 uppercase">Retención Acumulada</p><p className="text-3xl font-black text-indigo-600">{historicalKPIs.steps[historicalKPIs.steps.length - 1].retentionBase}%</p></div>
-                    </div>
-                    
-                    {/* PASOS VISUALES */}
-                    <div className="flex items-start justify-between gap-2 relative z-10 px-2 overflow-x-auto pb-8">
-                        {historicalKPIs.steps.map((step, idx) => ( <RetentionStep key={idx} label={step.month} count={step.count} percent={step.retentionBase} conversionRate={step.conversion} isLast={idx === historicalKPIs.steps.length - 1}/> ))}
-                    </div>
-
-                    {/* GRÁFICO DE ÁREA RESTAURADO */}
-                    <div className="h-64 w-full mt-4">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={historicalKPIs.steps}>
-                                <defs>
-                                    <linearGradient id="colorRetention" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="month" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} />
-                                <YAxis hide />
-                                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} />
-                                <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                                <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorRetention)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <KpiCard title={`Activos en ${currentMonth}`} value={historicalKPIs.activeInMonth} subtext={`Clientes gestionables en ${filterZone}`} color="indigo"/>
-                    <KpiCard title="Cartera en Riesgo" value={historicalKPIs.moraInMonth} subtext="Detectados en Mora" color="red"/>
-                    <KpiCard title="Total Histórico" value={filteredData.length} subtext="Base de datos filtrada" color="emerald"/>
-                </div>
-            </div>
-        )}
-      </main>
-      
-      <footer className="bg-slate-900 text-slate-400 py-2 px-6 flex justify-between items-center text-[10px] uppercase font-bold tracking-widest fixed bottom-0 w-full z-50">
-        <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5">{syncStatus === 'synced' ? <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div> : <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>}{syncStatus === 'synced' ? 'SISTEMA OPERATIVO' : syncStatus === 'saving' ? 'SINCRONIZANDO...' : 'DESCONECTADO'}</span>
-            <span className="text-slate-600">|</span>
-            <span className="flex items-center gap-1"><ShieldCheck size={10}/> CONEXIÓN SEGURA TLS 1.3</span>
-        </div>
-        <div className="flex items-center gap-2"><Wifi size={10} className={syncStatus === 'error' ? 'text-red-500' : 'text-emerald-500'}/>{lastSaved ? `ÚLTIMA SINCRONIZACIÓN: ${lastSaved.toLocaleTimeString()}` : 'INICIANDO...'}</div>
-      </footer>
-    </div>
-  );
-}
-
-const PlusIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>;
