@@ -3,7 +3,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, query, writeBatch } from 'firebase/firestore';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Search, Activity, Save, Edit, UserPlus, CheckCircle, XCircle, Layout, List, Loader2, Trash2, Database, Calendar, Layers, Wifi, ShieldCheck, Fingerprint, FileUp, DollarSign, Download, Filter, Phone, Clock, Plus } from 'lucide-react';
+import { Search, Activity, Save, Edit, UserPlus, CheckCircle, XCircle, Layout, List, Loader2, Trash2, Database, Calendar, Layers, Wifi, ShieldCheck, Fingerprint, FileUp, DollarSign, Download, Filter, Phone, Clock, Plus, Users } from 'lucide-react';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDyufliI-fEn7iR5kVhKWLlPwUcUR2tSiI",
@@ -30,7 +30,6 @@ const ETAPAS = ["2do Pedido", "3er Pedido", "4to Pedido", "Histórico"];
 const parseCSV = (text) => {
   const lines = text.split('\n');
   if (lines.length < 2) return [];
-
   const headers = lines[0].split(/,|;/).map(h => h.trim().toUpperCase().replace(/"/g, ''));
   const idxCodigo = headers.findIndex(h => h === 'CODIGO' || h === 'CÓDIGO' || h.includes('CÓDIGO'));
   const idxNombre = headers.findIndex(h => h.includes('NOMBRE'));
@@ -48,7 +47,6 @@ const parseCSV = (text) => {
   for (let i = 1; i < lines.length; i++) {
     const row = lines[i].replace(/\r/g, '').split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)|;(?=(?:(?:[^"]*"){2})*[^"]*$)/);
     if (row.length < 5) continue;
-
     const getVal = (idx) => idx !== -1 && row[idx] ? row[idx].replace(/"/g, '').trim() : '';
     const codigo = getVal(idxCodigo);
     const nombre = getVal(idxNombre);
@@ -56,7 +54,6 @@ const parseCSV = (text) => {
     if (codigo && nombre) {
         let etapaDetectada = '2do Pedido';
         const v1 = getVal(idxMes1), v2 = getVal(idxMes2), v3 = getVal(idxMes3), v4 = getVal(idxMes4);
-
         if (v4 && v4 !== '0' && v4 !== '-') etapaDetectada = 'Histórico';
         else if (v3 && v3 !== '0' && v3 !== '-') etapaDetectada = '4to Pedido';
         else if (v2 && v2 !== '0' && v2 !== '-') etapaDetectada = '3er Pedido';
@@ -106,6 +103,9 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({});
   const [filterZone, setFilterZone] = useState('TODAS');
+  
+  // NUEVO ESTADO: Filtro Modo Agente
+  const [showOnlyPending, setShowOnlyPending] = useState(false);
 
   useEffect(() => { signInAnonymously(auth).catch(console.error); return onAuthStateChanged(auth, setUser); }, []);
 
@@ -124,9 +124,7 @@ export default function App() {
     return () => unsub();
   }, [user]);
 
-  const showNotification = (msg, type='success') => {
-    setNotification({ msg, type }); setTimeout(() => setNotification(null), 3000);
-  };
+  const showNotification = (msg, type='success') => { setNotification({ msg, type }); setTimeout(() => setNotification(null), 3000); };
 
   const handleExportExcel = () => {
     if (data.length === 0) return showNotification("No hay datos para exportar", "error");
@@ -149,10 +147,8 @@ export default function App() {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     setIsImporting(true); setSyncStatus('saving');
-    const batch = writeBatch(db);
-    let count = 0;
-    const tempMap = new Map();
-    data.forEach(d => tempMap.set(d.codigo, d));
+    const batch = writeBatch(db); let count = 0;
+    const tempMap = new Map(); data.forEach(d => tempMap.set(d.codigo, d));
 
     for (const file of files) {
         const text = await file.text();
@@ -161,7 +157,9 @@ export default function App() {
             const existing = tempMap.get(rec.codigo) || { history: {} };
             const newHistory = { ...existing.history };
             if (rec.etapaSugestida) newHistory[currentMonth] = rec.etapaSugestida;
-
+            
+            // Al actualizar con Excel, si el cliente avanzó de etapa, le reseteamos la gestión a "pendiente" si lo deseas.
+            // Por ahora solo actualizamos los datos duros.
             const merged = { 
                 ...existing, nombre: rec.nombre || existing.nombre, zona: rec.zona || existing.zona,
                 saldo: rec.saldo, estado: rec.estado || existing.estado, fechaNacimiento: rec.fechaNacimiento || existing.fechaNacimiento,
@@ -173,7 +171,6 @@ export default function App() {
     }
 
     tempMap.forEach((val, key) => { batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'clients', key), val); count++; });
-
     try { await batch.commit(); setSyncStatus('synced'); showNotification(`¡Éxito! ${count} procesados.`); } 
     catch (err) { setSyncStatus('error'); showNotification("Error al importar.", "error"); } 
     finally { setIsImporting(false); e.target.value = null; }
@@ -197,8 +194,7 @@ export default function App() {
   };
 
   const handleSave = async (e) => {
-    e.preventDefault();
-    if (!user) return;
+    e.preventDefault(); if (!user) return;
     setSyncStatus('saving');
     try {
         const docId = formData.codigo || Date.now().toString();
@@ -212,8 +208,7 @@ export default function App() {
   const handleDelete = async () => {
       if(!editingId || editingId === 'NEW') return setEditingId(null);
       if(window.confirm("¿Eliminar registro?")) {
-          setSyncStatus('saving');
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', editingId));
+          setSyncStatus('saving'); await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'clients', editingId));
           setSyncStatus('synced'); setEditingId(null); showNotification("Eliminado.");
       }
   };
@@ -238,7 +233,19 @@ export default function App() {
       };
   }, [filteredData, currentMonth]);
 
-  const globalList = useMemo(() => data.filter(d => d.history?.[currentMonth] && (d.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || d.codigo.includes(searchTerm))), [data, currentMonth, searchTerm]);
+  // APLICANDO EL FILTRO MODO AGENTE AQUÍ
+  const globalList = useMemo(() => {
+      return data.filter(d => {
+          const inCurrentMonth = d.history?.[currentMonth];
+          if (!inCurrentMonth) return false;
+          
+          // Si "Solo Pendientes" está activo, escondemos a los que ya tienen gestión "SÍ"
+          if (showOnlyPending && d.gestionEfectiva === 'SI') return false;
+
+          const matchSearch = d.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || d.codigo.includes(searchTerm);
+          return matchSearch;
+      });
+  }, [data, currentMonth, searchTerm, showOnlyPending]);
 
   const handleNewClient = (stagePreset) => { setEditingId('NEW'); setFormData({ codigo: '', nombre: '', zona: '', saldo: 0, estado: 'ACT', etapa: stagePreset || '2do Pedido', comentario: '', history: { [currentMonth]: stagePreset || '2do Pedido' }, gestionEfectiva: '', fechaFollowUp: '', fechaNacimiento: '' }); };
 
@@ -277,10 +284,19 @@ export default function App() {
             <div className="flex flex-col h-full gap-4">
                 <div className="flex justify-between shrink-0">
                     <div className="flex gap-4">
-                        <div className="bg-white px-4 py-2 rounded-xl border flex items-center gap-3"><div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><UserPlus size={16}/></div><div><p className="text-[10px] uppercase font-bold text-slate-400">Total Activos</p><p className="text-lg font-black">{globalList.length}</p></div></div>
-                        <div className="relative w-64"><Search className="absolute left-3 top-3 text-slate-400 w-4 h-4" /><input type="text" placeholder="Buscar cliente..." className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div>
+                        <div className="bg-white px-4 py-2 rounded-xl border flex items-center gap-3"><div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Users size={16}/></div><div><p className="text-[10px] uppercase font-bold text-slate-400">Mostrando</p><p className="text-lg font-black">{globalList.length}</p></div></div>
+                        
+                        {/* BOTÓN MODO AGENTE */}
+                        <button 
+                            onClick={() => setShowOnlyPending(!showOnlyPending)} 
+                            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${showOnlyPending ? 'bg-amber-100 text-amber-700 border border-amber-300 shadow-inner' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-transparent'}`}
+                        >
+                            <Filter size={16}/> {showOnlyPending ? 'VISTA: SOLO PENDIENTES' : 'VISTA: TODOS'}
+                        </button>
+
+                        <div className="relative w-64"><Search className="absolute left-3 top-3 text-slate-400 w-4 h-4" /><input type="text" placeholder="Buscar cliente..." className="w-full pl-10 pr-4 py-2.5 text-sm rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-200" value={searchTerm} onChange={e => setSearchTerm(e.target.value)}/></div>
                     </div>
-                    <button onClick={() => handleNewClient()} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2"><UserPlus size={18}/> NUEVO INGRESO</button>
+                    <button onClick={() => handleNewClient()} className="bg-emerald-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-700 transition-colors"><UserPlus size={18}/> NUEVO INGRESO</button>
                 </div>
 
                 <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
@@ -289,16 +305,16 @@ export default function App() {
                             const clientsInStage = globalList.filter(c => c.history[currentMonth] === stage);
                             return (
                                 <div key={stage} className={`w-80 flex flex-col rounded-2xl ${COLORS.bgStages[stage]} border ${COLORS.borderStages[stage]} h-full`}>
-                                    <div className="p-4 flex justify-between shrink-0 border-b border-white/50"><div className="flex gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS.stages[stage]}}></div><h3 className="font-black text-sm uppercase">{stage}</h3></div><span className="bg-white/60 px-2 rounded-md text-xs font-bold text-slate-500">{clientsInStage.length}</span></div>
+                                    <div className="p-4 flex justify-between shrink-0 border-b border-white/50"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS.stages[stage]}}></div><h3 className="font-black text-sm uppercase">{stage}</h3></div><span className="bg-white/60 px-2 rounded-md text-xs font-bold text-slate-500">{clientsInStage.length}</span></div>
                                     <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
                                         {clientsInStage.map(client => (
-                                            <div key={client.id} onClick={() => { setEditingId(client.id); setFormData(client); }} className={`bg-white p-4 rounded-xl shadow-sm border cursor-pointer hover:shadow-md ${client.gestionEfectiva === 'NO' ? 'border-l-4 border-l-red-500' : 'border-slate-100'}`}>
-                                                <div className="flex justify-between mb-2"><span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 rounded-md flex items-center gap-1"><Fingerprint size={10}/> {client.codigo}</span>{client.estado === 'MOR' && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 rounded">MORA</span>}</div>
-                                                <h4 className="font-bold text-sm mb-3">{client.nombre}</h4>
-                                                {client.fechaFollowUp && <div className="mb-2 flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded"><Clock size={10}/> {client.fechaFollowUp}</div>}
+                                            <div key={client.id} onClick={() => { setEditingId(client.id); setFormData(client); }} className={`bg-white p-4 rounded-xl shadow-sm border cursor-pointer hover:shadow-md transition-all ${client.gestionEfectiva === 'NO' ? 'border-l-4 border-l-red-500' : 'border-slate-100'}`}>
+                                                <div className="flex justify-between items-start mb-2"><span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 rounded-md flex items-center gap-1"><Fingerprint size={10}/> {client.codigo}</span>{client.estado === 'MOR' && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 rounded">MORA</span>}</div>
+                                                <h4 className="font-bold text-sm mb-3 leading-tight">{client.nombre}</h4>
+                                                {client.fechaFollowUp && <div className="mb-2 flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded"><Clock size={10}/> Seguir: {client.fechaFollowUp}</div>}
                                                 <div className="flex justify-between pt-3 border-t border-slate-50">
                                                     <div className="flex flex-col"><span className="text-[9px] text-slate-400 font-bold uppercase">Saldo</span><span className="font-mono text-xs font-bold flex items-center"><DollarSign size={10}/>{client.saldo}</span></div>
-                                                    {stage !== '4to Pedido' && stage !== 'Histórico' && <button onClick={(e) => { e.stopPropagation(); handleAdvanceStage(client); }} className="p-2 rounded-lg bg-indigo-50 text-indigo-600"><CheckCircle size={16}/></button>}
+                                                    {stage !== '4to Pedido' && stage !== 'Histórico' && <button onClick={(e) => { e.stopPropagation(); handleAdvanceStage(client); }} className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-colors" title="Confirmar Pedido"><CheckCircle size={16}/></button>}
                                                 </div>
                                             </div>
                                         ))}
@@ -314,28 +330,28 @@ export default function App() {
                     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
                         <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
                             <div className="p-6 border-b flex justify-between bg-slate-50">
-                                <div><h3 className="font-black text-xl flex gap-2">{editingId === 'NEW' ? 'Nuevo Ingreso' : 'Ficha de Cliente'}</h3><p className="text-xs text-slate-500 mt-1">Mes: {currentMonth}</p></div>
-                                <div className="flex gap-2">{editingId !== 'NEW' && <button onClick={handleDelete} className="p-2 text-slate-400 hover:text-red-500"><Trash2 size={20}/></button>}<button onClick={() => setEditingId(null)} className="p-2 text-slate-400"><XCircle size={24}/></button></div>
+                                <div><h3 className="font-black text-xl flex items-center gap-2">{editingId === 'NEW' ? <UserPlus className="text-emerald-500"/> : <Edit className="text-indigo-500"/>} {editingId === 'NEW' ? 'Nuevo Ingreso' : 'Ficha de Cliente'}</h3><p className="text-xs text-slate-500 mt-1">Mes: {currentMonth}</p></div>
+                                <div className="flex gap-2">{editingId !== 'NEW' && <button onClick={handleDelete} className="p-2 text-slate-400 hover:text-red-500 bg-white rounded-lg"><Trash2 size={20}/></button>}<button onClick={() => setEditingId(null)} className="p-2 text-slate-400 hover:text-slate-700 bg-white rounded-lg"><XCircle size={24}/></button></div>
                             </div>
                             <form className="flex-1 overflow-y-auto p-8 space-y-6">
                                 <div className="grid grid-cols-2 gap-6">
-                                    <div className="col-span-2"><label className="text-xs font-bold uppercase block mb-2">Nombre</label><input required className="w-full p-3.5 bg-slate-50 border-2 rounded-xl" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold uppercase block mb-2">Código</label><input required className="w-full p-3.5 bg-slate-50 border-2 rounded-xl" value={formData.codigo || ''} onChange={e => setFormData({...formData, codigo: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold uppercase block mb-2">Zona</label><input className="w-full p-3.5 bg-slate-50 border-2 rounded-xl" value={formData.zona || ''} onChange={e => setFormData({...formData, zona: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold uppercase block mb-2">Cumpleaños</label><input type="text" className="w-full p-3.5 bg-slate-50 border-2 rounded-xl" value={formData.fechaNacimiento || ''} onChange={e => setFormData({...formData, fechaNacimiento: e.target.value})} /></div>
-                                    <div><label className="text-xs font-bold uppercase block mb-2">Saldo ($)</label><input type="number" className="w-full p-3.5 bg-slate-50 border-2 rounded-xl font-mono" value={formData.saldo || 0} onChange={e => setFormData({...formData, saldo: e.target.value})} /></div>
-                                    <div className="col-span-2 bg-slate-50 p-5 rounded-2xl border">
-                                        <h4 className="text-sm font-black mb-4">Registro de Gestión</h4>
+                                    <div className="col-span-2"><label className="text-xs font-bold uppercase block mb-2 text-slate-400">Nombre</label><input required className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500 font-bold" value={formData.nombre || ''} onChange={e => setFormData({...formData, nombre: e.target.value})} /></div>
+                                    <div><label className="text-xs font-bold uppercase block mb-2 text-slate-400">Código</label><input required className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500" value={formData.codigo || ''} onChange={e => setFormData({...formData, codigo: e.target.value})} /></div>
+                                    <div><label className="text-xs font-bold uppercase block mb-2 text-slate-400">Zona</label><input className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500" value={formData.zona || ''} onChange={e => setFormData({...formData, zona: e.target.value})} /></div>
+                                    <div><label className="text-xs font-bold uppercase block mb-2 text-slate-400">Cumpleaños</label><input type="text" className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500" value={formData.fechaNacimiento || ''} onChange={e => setFormData({...formData, fechaNacimiento: e.target.value})} /></div>
+                                    <div><label className="text-xs font-bold uppercase block mb-2 text-slate-400">Saldo ($)</label><input type="number" className="w-full p-3.5 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-500 font-mono font-bold" value={formData.saldo || 0} onChange={e => setFormData({...formData, saldo: e.target.value})} /></div>
+                                    <div className="col-span-2 bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                                        <h4 className="text-sm font-black mb-4 flex items-center gap-2"><Phone size={16} className="text-indigo-500"/>Registro de Gestión</h4>
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div><label className="text-xs font-bold uppercase block mb-2">¿Gestión Efectiva?</label><select className="w-full p-3.5 border-2 rounded-xl font-bold" value={formData.gestionEfectiva || ''} onChange={e => setFormData({...formData, gestionEfectiva: e.target.value})}><option value="">-- Seleccionar --</option><option value="SI">SÍ - Confirmado</option><option value="NO">NO - FollowUp</option></select></div>
-                                            {formData.gestionEfectiva === 'NO' && <div><label className="text-xs font-bold uppercase text-red-400 block mb-2">Fecha Follow-Up</label><input type="date" className="w-full p-3.5 border-2 border-red-100 rounded-xl" value={formData.fechaFollowUp || ''} onChange={e => setFormData({...formData, fechaFollowUp: e.target.value})} /></div>}
+                                            <div><label className="text-xs font-bold uppercase block mb-2 text-slate-400">¿Gestión Efectiva?</label><select className={`w-full p-3.5 border-2 rounded-xl outline-none font-bold ${formData.gestionEfectiva === 'SI' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : formData.gestionEfectiva === 'NO' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-white border-slate-100'}`} value={formData.gestionEfectiva || ''} onChange={e => setFormData({...formData, gestionEfectiva: e.target.value})}><option value="">-- Seleccionar --</option><option value="SI">SÍ - Confirmado</option><option value="NO">NO - FollowUp</option></select></div>
+                                            {formData.gestionEfectiva === 'NO' && <div><label className="text-xs font-bold uppercase text-red-400 block mb-2">Fecha Follow-Up</label><input type="date" className="w-full p-3.5 bg-white border-2 border-red-100 rounded-xl outline-none focus:border-red-500 font-bold" value={formData.fechaFollowUp || ''} onChange={e => setFormData({...formData, fechaFollowUp: e.target.value})} /></div>}
                                         </div>
                                     </div>
-                                    {editingId === 'NEW' && <div className="col-span-2 bg-indigo-50 p-5 rounded-2xl border"><label className="text-xs font-bold uppercase text-indigo-500 block mb-3">Etapa en {currentMonth}</label><div className="flex gap-3">{ETAPAS.slice(0,3).map(st => <button key={st} type="button" onClick={() => setFormData({...formData, etapa: st, history: {[currentMonth]: st}})} className={`flex-1 py-3 text-xs rounded-xl font-bold border-2 ${formData.etapa === st ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-400'}`}>{st}</button>)}</div></div>}
+                                    {editingId === 'NEW' && <div className="col-span-2 bg-indigo-50 p-5 rounded-2xl border border-indigo-100"><label className="text-xs font-bold uppercase text-indigo-500 block mb-3 flex items-center gap-2"><Calendar size={14}/>Etapa en {currentMonth}</label><div className="flex gap-3">{ETAPAS.slice(0,3).map(st => <button key={st} type="button" onClick={() => setFormData({...formData, etapa: st, history: {[currentMonth]: st}})} className={`flex-1 py-3 text-xs rounded-xl font-bold border-2 transition-all ${formData.etapa === st ? 'bg-indigo-600 text-white' : 'bg-white text-indigo-400'}`}>{st}</button>)}</div></div>}
                                 </div>
-                                <div><label className="text-xs font-bold uppercase block mb-2">Comentarios</label><textarea className="w-full p-4 bg-slate-50 border-2 rounded-xl h-32" value={formData.comentario || ''} onChange={e => setFormData({...formData, comentario: e.target.value})} /></div>
+                                <div><label className="text-xs font-bold uppercase block mb-2 text-slate-400 mt-6">Comentarios</label><textarea className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl h-32 outline-none focus:border-indigo-500" value={formData.comentario || ''} onChange={e => setFormData({...formData, comentario: e.target.value})} /></div>
                             </form>
-                            <div className="p-6 border-t bg-slate-50 flex justify-end gap-4"><button type="button" onClick={() => setEditingId(null)} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-500">Cancelar</button><button onClick={handleSave} className="px-8 py-3 rounded-xl text-sm font-bold text-white bg-indigo-600">{syncStatus === 'saving' ? 'Guardando...' : 'GUARDAR'}</button></div>
+                            <div className="p-6 border-t bg-slate-50 flex justify-end gap-4"><button type="button" onClick={() => setEditingId(null)} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-500 border border-slate-200 bg-white hover:bg-slate-100">Cancelar</button><button onClick={handleSave} className="px-8 py-3 rounded-xl text-sm font-bold text-white bg-indigo-600 flex items-center gap-2 shadow-lg shadow-indigo-200">{syncStatus === 'saving' ? <Loader2 className="animate-spin" size={18}/> : <Save size={18}/>} {syncStatus === 'saving' ? 'Guardando...' : 'GUARDAR'}</button></div>
                         </div>
                     </div>
                 )}
@@ -344,9 +360,9 @@ export default function App() {
 
         {activeTab === 'dashboard' && (
             <div className="flex flex-col gap-8 overflow-y-auto pb-8">
-                <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-4"><Filter size={16}/><select className="bg-slate-50 border rounded-lg p-2.5 font-bold" value={filterZone} onChange={e => setFilterZone(e.target.value)}>{uniqueZones.map(z => <option key={z} value={z}>{z}</option>)}</select></div>
+                <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-4"><Filter size={16}/><select className="bg-slate-50 border rounded-lg p-2.5 font-bold outline-none focus:ring-2 focus:ring-indigo-500" value={filterZone} onChange={e => setFilterZone(e.target.value)}>{uniqueZones.map(z => <option key={z} value={z}>{z}</option>)}</select></div>
                 <div className="bg-white p-8 rounded-2xl shadow-sm relative">
-                    <div className="flex justify-between items-start mb-8"><h3 className="font-black text-2xl uppercase flex gap-3"><Layers className="text-indigo-600"/> Efectividad ({filterZone})</h3><div className="bg-indigo-50 p-3 rounded-xl"><p className="text-xs font-bold text-indigo-400">Retención Acumulada</p><p className="text-3xl font-black text-indigo-600">{historicalKPIs.steps[historicalKPIs.steps.length - 1]?.retentionBase || 0}%</p></div></div>
+                    <div className="flex justify-between items-start mb-8"><h3 className="font-black text-2xl uppercase flex items-center gap-3"><Layers className="text-indigo-600"/> Efectividad ({filterZone})</h3><div className="bg-indigo-50 p-3 rounded-xl"><p className="text-xs font-bold text-indigo-400 uppercase">Retención Acumulada</p><p className="text-3xl font-black text-indigo-600">{historicalKPIs.steps[historicalKPIs.steps.length - 1]?.retentionBase || 0}%</p></div></div>
                     <div className="flex justify-between gap-2 px-2 pb-8 overflow-x-auto">{historicalKPIs.steps.map((step, idx) => <RetentionStep key={idx} label={step.month} count={step.count} percent={step.retentionBase} conversionRate={step.conversion} isLast={idx === historicalKPIs.steps.length - 1}/>)}</div>
                     <div className="h-64 w-full mt-4"><ResponsiveContainer width="100%" height="100%"><AreaChart data={historicalKPIs.steps}><defs><linearGradient id="colorRetention" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="month" tick={{fontSize: 10, fontWeight: 'bold'}} axisLine={false} tickLine={false} /><YAxis hide /><Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} /><CartesianGrid vertical={false} stroke="#f1f5f9" /><Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorRetention)" /></AreaChart></ResponsiveContainer></div>
                 </div>
@@ -356,8 +372,8 @@ export default function App() {
       </main>
       
       <footer className="bg-slate-900 text-slate-400 py-2 px-6 flex justify-between items-center text-[10px] uppercase font-bold fixed bottom-0 w-full z-50">
-        <div className="flex gap-4"><span className="flex gap-1.5">{syncStatus === 'synced' ? <div className="w-2 h-2 rounded-full bg-emerald-500"></div> : <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>}{syncStatus === 'synced' ? 'SISTEMA OPERATIVO' : 'SINCRONIZANDO...'}</span><span className="text-slate-600">|</span><span className="flex gap-1"><ShieldCheck size={10}/> TLS 1.3</span></div>
-        <div className="flex gap-2"><Wifi size={10} className={syncStatus === 'error' ? 'text-red-500' : 'text-emerald-500'}/>{lastSaved ? `ÚLTIMA SYNC: ${lastSaved.toLocaleTimeString()}` : 'INICIANDO...'}</div>
+        <div className="flex items-center gap-4"><span className="flex items-center gap-1.5">{syncStatus === 'synced' ? <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div> : <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>}{syncStatus === 'synced' ? 'SISTEMA OPERATIVO' : 'SINCRONIZANDO...'}</span><span className="text-slate-600">|</span><span className="flex items-center gap-1"><ShieldCheck size={10}/> TLS 1.3</span></div>
+        <div className="flex items-center gap-2"><Wifi size={10} className={syncStatus === 'error' ? 'text-red-500' : 'text-emerald-500'}/>{lastSaved ? `ÚLTIMA SYNC: ${lastSaved.toLocaleTimeString()}` : 'INICIANDO...'}</div>
       </footer>
     </div>
   );
