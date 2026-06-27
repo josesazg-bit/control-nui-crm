@@ -1,14 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-
-// --- Paleta de estilos ---
-const theme = {
-  bg: '#f4f7f6',
-  text: '#2c3e50',
-  card: '#ffffff',
-  accent: '#005A9C',
-  accentHover: '#004375',
-  muted: '#7f8c8d',
-};
+import './Scoreboard.css';
 
 // --- Definición de grupos (8 grupos de 4 equipos) ---
 const GRUPOS = {
@@ -56,7 +47,7 @@ const LLAVES = {
 };
 const TODOS_KO = Object.values(LLAVES).flat();
 const getKODef = (id) => TODOS_KO.find((m) => m.id === id);
-const NOMBRE_KO = { O: 'Octavos', C: 'Cuartos', S: 'Semifinal', T: '3.º puesto', F: 'Final' };
+const NOMBRE_KO = { O: 'Octavos de final', C: 'Cuartos de final', S: 'Semifinal', T: 'Tercer puesto', F: 'Gran final' };
 
 const STORAGE_KEY = 'mundial-scores-v1';
 
@@ -196,202 +187,168 @@ export default function Scoreboard() {
   );
 
   return (
-    <div style={S.body}>
-      <a href="#" style={S.volver}>&larr; Volver al CRM</a>
-      <h1 style={S.h1}>🏆 Mundial — Marcadores en Vivo</h1>
+    <div className="pitch">
+      <a className="pitch__back" href="#">&larr; Volver al CRM</a>
+
+      {/* Hero */}
+      <header className="pitch__hero">
+        <span className="pitch__live"><span className="pitch__dot" /> En vivo</span>
+        <h1 className="pitch__title">El Mundial<em>en tus manos</em></h1>
+        <p className="pitch__sub">
+          Consulta el resultado real en Google, escríbelo, y mira cómo las tablas de grupo y el
+          cuadro de llaves se reordenan solos. Todo se guarda en tu teléfono.
+        </p>
+      </header>
 
       {/* Buscador de Google */}
-      <div style={S.buscadorWrap}>
+      <div className="pitch__search">
         <input
-          style={S.input}
-          placeholder="Buscar resultado en Google (ej. Argentina vs Francia)"
+          className="pitch__search-input"
+          placeholder="Buscar partido en Google…"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && busqueda.trim()) buscarEnGoogle(`${busqueda} resultado mundial`); }}
         />
         <button
-          style={S.btnPrimario}
+          className="pitch__search-btn"
           onClick={() => busqueda.trim() && buscarEnGoogle(`${busqueda} resultado mundial`)}
         >
-          🔎 Buscar en Google
+          🔎<span>&nbsp;Buscar</span>
         </button>
       </div>
-      <p style={S.ayuda}>
-        Consulta el resultado real en Google y escríbelo abajo: las tablas de grupo y el cuadro de
-        llaves se actualizan solos. Todo se guarda en tu navegador.
-      </p>
 
       {/* Pestañas */}
-      <div style={S.tabs}>
-        <button style={vista === 'grupos' ? S.tabActiva : S.tab} onClick={() => setVista('grupos')}>
-          Fase de Grupos
+      <nav className="pitch__tabs">
+        <button className="pitch__tab" data-active={vista === 'grupos'} onClick={() => setVista('grupos')}>
+          Fase de grupos
         </button>
-        <button style={vista === 'llaves' ? S.tabActiva : S.tab} onClick={() => setVista('llaves')}>
+        <button className="pitch__tab" data-active={vista === 'llaves'} onClick={() => setVista('llaves')}>
           Eliminatorias
         </button>
-        <button style={S.btnReset} onClick={reiniciar}>Reiniciar</button>
-      </div>
+        <button className="pitch__reset" title="Reiniciar marcadores" onClick={reiniciar}>↺</button>
+      </nav>
 
-      <div style={S.contenido}>
+      <main className="pitch__grid">
         {vista === 'grupos'
-          ? GRUPO_KEYS.map((g) => (
+          ? GRUPO_KEYS.map((g, i) => (
               <Grupo
                 key={g}
                 grupo={g}
+                index={i}
                 tabla={standings[g]}
                 groupScores={groupScores}
                 setGoles={setGoles}
               />
             ))
-          : Object.entries(LLAVES).map(([ronda, partidos]) => (
-              <div key={ronda} style={S.card}>
-                <h3 style={S.cardTitulo}>{ronda}</h3>
+          : Object.entries(LLAVES).map(([ronda, partidos], i) => (
+              <section className="card" style={{ animationDelay: `${i * 60}ms` }} key={ronda}>
+                <div className="card__head">
+                  <span className="card__tag">{ronda}</span>
+                  <span className="card__rule" />
+                </div>
                 {partidos.map((m) => (
                   <PartidoKO key={m.id} def={m} estado={resolveKO(m.id)} setKO={setKO} koScores={koScores} />
                 ))}
-              </div>
+              </section>
             ))}
-      </div>
+      </main>
     </div>
   );
 }
 
 // --- Componente: tarjeta de un grupo (tabla + partidos editables) ---
-function Grupo({ grupo, tabla, groupScores, setGoles }) {
+function Grupo({ grupo, index, tabla, groupScores, setGoles }) {
   const equipos = GRUPOS[grupo];
   return (
-    <div style={S.card}>
-      <h3 style={S.cardTitulo}>Grupo {grupo}</h3>
+    <section className="card" style={{ animationDelay: `${index * 60}ms` }}>
+      <div className="card__head">
+        <span className="card__tag">Grupo <b>{grupo}</b></span>
+        <span className="card__rule" />
+      </div>
 
       {/* Tabla de posiciones */}
-      <table style={S.tabla}>
+      <table className="standings">
         <thead>
-          <tr style={S.thead}>
-            <th style={{ ...S.th, textAlign: 'left' }}>Equipo</th>
-            <th style={S.th}>PJ</th>
-            <th style={S.th}>G</th>
-            <th style={S.th}>E</th>
-            <th style={S.th}>P</th>
-            <th style={S.th}>GF</th>
-            <th style={S.th}>GC</th>
-            <th style={S.th}>DG</th>
-            <th style={S.th}>Pts</th>
+          <tr>
+            <th className="is-left">Equipo</th>
+            <th>PJ</th><th>G</th><th>E</th><th>P</th><th>DG</th><th>Pts</th>
           </tr>
         </thead>
         <tbody>
           {tabla?.map((t, i) => (
-            <tr key={t.equipo} style={i < 2 ? S.filaClasifica : undefined}>
-              <td style={{ ...S.td, textAlign: 'left', fontWeight: 600 }}>
-                {i < 2 ? '✅ ' : ''}{t.equipo}
+            <tr key={t.equipo} className={i < 2 ? 'row-q' : undefined}>
+              <td className="col-team">
+                <span className="team-cell">
+                  <span className="pos">{i + 1}</span>
+                  <span className="team-name">{t.equipo}</span>
+                </span>
               </td>
-              <td style={S.td}>{t.pj}</td>
-              <td style={S.td}>{t.g}</td>
-              <td style={S.td}>{t.e}</td>
-              <td style={S.td}>{t.p}</td>
-              <td style={S.td}>{t.gf}</td>
-              <td style={S.td}>{t.gc}</td>
-              <td style={S.td}>{t.dg}</td>
-              <td style={{ ...S.td, fontWeight: 700, color: theme.accent }}>{t.pts}</td>
+              <td>{t.pj}</td>
+              <td>{t.g}</td>
+              <td>{t.e}</td>
+              <td>{t.p}</td>
+              <td>{t.dg > 0 ? `+${t.dg}` : t.dg}</td>
+              <td className="pts">{t.pts}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
       {/* Partidos editables */}
-      <div style={S.partidos}>
+      <div className="matches">
         {PARES.map(([i, j], k) => {
           const matchId = `${grupo}-${k}`;
           const sc = groupScores[matchId] || {};
           return (
-            <div key={matchId} style={S.partidoRow}>
-              <span style={S.equipoIzq}>{equipos[i]}</span>
-              <input style={S.score} type="number" min="0" inputMode="numeric"
+            <div className="match" key={matchId}>
+              <span className="match__team home">{equipos[i]}</span>
+              <input className="score" type="number" min="0" inputMode="numeric"
                 value={sc.s1 ?? ''} onChange={(e) => setGoles(matchId, 's1', e.target.value)} />
-              <span style={S.guion}>-</span>
-              <input style={S.score} type="number" min="0" inputMode="numeric"
+              <span className="sep">:</span>
+              <input className="score" type="number" min="0" inputMode="numeric"
                 value={sc.s2 ?? ''} onChange={(e) => setGoles(matchId, 's2', e.target.value)} />
-              <span style={S.equipoDer}>{equipos[j]}</span>
-              <button style={S.lupa} title="Buscar en Google"
+              <span className="match__team away">{equipos[j]}</span>
+              <button className="search-mini" title="Buscar en Google"
                 onClick={() => buscarEnGoogle(`${equipos[i]} vs ${equipos[j]} resultado mundial`)}>🔎</button>
             </div>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }
 
 // --- Componente: partido de eliminatorias ---
 function PartidoKO({ def, estado, setKO, koScores }) {
   const sc = koScores[def.id] || {};
-  const a = estado.teamA || 'Por definir';
-  const b = estado.teamB || 'Por definir';
-  const etiqueta = NOMBRE_KO[def.id[0]];
+  const a = estado.teamA;
+  const b = estado.teamB;
+  const esFinal = def.id === 'F1';
   return (
-    <div style={S.koRow}>
-      <span style={S.koEtiqueta}>{def.id === 'T3' ? '3.º puesto' : def.id === 'F1' ? 'Final' : etiqueta}</span>
-      <div style={S.koLinea}>
-        <span style={S.equipoIzq}>{a}</span>
-        <input style={S.score} type="number" min="0" inputMode="numeric"
+    <div className={`ko${esFinal ? ' ko--final' : ''}`}>
+      <div className="ko__round">{NOMBRE_KO[def.id[0]]}</div>
+      <div className="ko__row">
+        <span className={`match__team home${a ? '' : ' pending'}`}>{a || 'Por definir'}</span>
+        <input className="score" type="number" min="0" inputMode="numeric"
           value={sc.s1 ?? ''} onChange={(e) => setKO(def.id, 's1', e.target.value)} />
-        <span style={S.guion}>-</span>
-        <input style={S.score} type="number" min="0" inputMode="numeric"
+        <span className="sep">:</span>
+        <input className="score" type="number" min="0" inputMode="numeric"
           value={sc.s2 ?? ''} onChange={(e) => setKO(def.id, 's2', e.target.value)} />
-        <span style={S.equipoDer}>{b}</span>
-        <button style={S.lupa} title="Buscar en Google"
-          onClick={() => buscarEnGoogle(`${a} vs ${b} resultado mundial`)}>🔎</button>
+        <span className={`match__team away${b ? '' : ' pending'}`}>{b || 'Por definir'}</span>
+        <button className="search-mini" title="Buscar en Google"
+          onClick={() => buscarEnGoogle(`${a || ''} vs ${b || ''} resultado mundial`)}>🔎</button>
       </div>
       {estado.empate && (
-        <div style={S.penales}>
-          Penales:
-          <input style={S.scorePenal} type="number" min="0" inputMode="numeric"
+        <div className="ko__pens">
+          Penales
+          <input className="pen" type="number" min="0" inputMode="numeric"
             value={sc.p1 ?? ''} onChange={(e) => setKO(def.id, 'p1', e.target.value)} />
-          <span style={S.guion}>-</span>
-          <input style={S.scorePenal} type="number" min="0" inputMode="numeric"
+          <span className="sep">:</span>
+          <input className="pen" type="number" min="0" inputMode="numeric"
             value={sc.p2 ?? ''} onChange={(e) => setKO(def.id, 'p2', e.target.value)} />
         </div>
       )}
-      {estado.winner && <div style={S.avanza}>➡️ Avanza: <strong>{estado.winner}</strong></div>}
+      {estado.winner && <div className="ko__winner">{esFinal ? '🏆 Campeón:' : '➡ Avanza:'} <strong>&nbsp;{estado.winner}</strong></div>}
     </div>
   );
 }
-
-// --- Estilos ---
-const S = {
-  body: {
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
-    backgroundColor: theme.bg, color: theme.text, minHeight: '100vh', margin: 0,
-    padding: 20, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', alignItems: 'center',
-  },
-  volver: { alignSelf: 'flex-start', color: theme.accent, textDecoration: 'none', fontSize: 14, fontWeight: 600, marginBottom: 10 },
-  h1: { fontWeight: 300, marginBottom: 16, textAlign: 'center' },
-  buscadorWrap: { display: 'flex', gap: 10, width: '100%', maxWidth: 600, flexWrap: 'wrap', justifyContent: 'center' },
-  input: { flex: 1, minWidth: 220, padding: '10px 14px', fontSize: 15, border: '1px solid #cfd8dc', borderRadius: 8, outline: 'none' },
-  btnPrimario: { backgroundColor: theme.accent, color: 'white', border: 'none', padding: '10px 18px', fontSize: 15, borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
-  ayuda: { color: theme.muted, fontSize: 13, maxWidth: 600, textAlign: 'center', margin: '10px 0 20px' },
-  tabs: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', justifyContent: 'center' },
-  tab: { background: '#fff', color: theme.text, border: '1px solid #cfd8dc', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
-  tabActiva: { background: theme.accent, color: '#fff', border: '1px solid ' + theme.accent, padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
-  btnReset: { background: '#fff', color: '#c0392b', border: '1px solid #e0b4b0', padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontWeight: 600 },
-  contenido: { width: '100%', maxWidth: 600, display: 'flex', flexDirection: 'column', gap: 16 },
-  card: { backgroundColor: theme.card, padding: 16, borderRadius: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.05)' },
-  cardTitulo: { margin: '0 0 12px', fontSize: 18, color: theme.accent },
-  tabla: { width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 12 },
-  thead: { borderBottom: '2px solid #eef2f5' },
-  th: { padding: '6px 4px', textAlign: 'center', color: theme.muted, fontWeight: 700, fontSize: 11, textTransform: 'uppercase' },
-  td: { padding: '6px 4px', textAlign: 'center', borderBottom: '1px solid #f0f3f5' },
-  filaClasifica: { background: '#eef7ef' },
-  partidos: { display: 'flex', flexDirection: 'column', gap: 8 },
-  partidoRow: { display: 'flex', alignItems: 'center', gap: 6 },
-  koRow: { padding: '10px 0', borderBottom: '1px solid #f0f3f5' },
-  koLinea: { display: 'flex', alignItems: 'center', gap: 6 },
-  koEtiqueta: { fontSize: 10, color: theme.muted, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700 },
-  equipoIzq: { flex: 1, textAlign: 'right', fontSize: 14, fontWeight: 500 },
-  equipoDer: { flex: 1, textAlign: 'left', fontSize: 14, fontWeight: 500 },
-  score: { width: 44, padding: '6px', textAlign: 'center', fontSize: 16, fontWeight: 'bold', color: theme.accent, background: '#eef2f5', border: '1px solid #dce4e8', borderRadius: 6 },
-  scorePenal: { width: 38, padding: '4px', textAlign: 'center', fontSize: 13, border: '1px solid #dce4e8', borderRadius: 6, margin: '0 4px' },
-  guion: { fontWeight: 'bold', color: theme.muted },
-  lupa: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 2 },
-  penales: { fontSize: 12, color: theme.muted, marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  avanza: { fontSize: 13, color: '#27ae60', marginTop: 6, textAlign: 'center' },
-};
