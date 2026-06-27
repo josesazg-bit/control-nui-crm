@@ -115,10 +115,19 @@ export default function Scoreboard() {
       letterSpacing: 1,
     },
     aviso: { textAlign: 'center', color: '#7f8c8d' },
+    volver: {
+      alignSelf: 'flex-start',
+      color: theme.accent,
+      textDecoration: 'none',
+      fontSize: 14,
+      fontWeight: 600,
+      marginBottom: 10,
+    },
   };
 
   return (
     <div style={styles.body}>
+      <a href="#" style={styles.volver}>&larr; Volver al CRM</a>
       <h1 style={styles.h1}>Llaves del Mundial</h1>
 
       <button
