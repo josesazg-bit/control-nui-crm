@@ -1,87 +1,98 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import './Scoreboard.css';
 
-// --- Definición de grupos (8 grupos de 4 equipos) ---
+// --- Grupos oficiales del Mundial 2026 (sorteo del 5 dic 2025, 48 equipos / 12 grupos) ---
 const GRUPOS = {
-  A: ['Argentina', 'México', 'Polonia', 'Arabia Saudita'],
-  B: ['Francia', 'Países Bajos', 'Senegal', 'Australia'],
-  C: ['Brasil', 'Suiza', 'Camerún', 'Serbia'],
-  D: ['Inglaterra', 'Estados Unidos', 'Irán', 'Gales'],
-  E: ['España', 'Alemania', 'Japón', 'Costa Rica'],
-  F: ['Bélgica', 'Croacia', 'Marruecos', 'Canadá'],
-  G: ['Portugal', 'Uruguay', 'Corea del Sur', 'Ghana'],
-  H: ['Italia', 'Colombia', 'Ecuador', 'Nigeria'],
+  A: ['México', 'Corea del Sur', 'Chequia', 'Sudáfrica'],
+  B: ['Suiza', 'Canadá', 'Catar', 'Bosnia y Herzegovina'],
+  C: ['Brasil', 'Marruecos', 'Escocia', 'Haití'],
+  D: ['Estados Unidos', 'Turquía', 'Paraguay', 'Australia'],
+  E: ['Alemania', 'Costa de Marfil', 'Ecuador', 'Curazao'],
+  F: ['Países Bajos', 'Japón', 'Suecia', 'Túnez'],
+  G: ['Bélgica', 'Egipto', 'Irán', 'Nueva Zelanda'],
+  H: ['España', 'Uruguay', 'Cabo Verde', 'Arabia Saudita'],
+  I: ['Francia', 'Senegal', 'Noruega', 'Irak'],
+  J: ['Argentina', 'Austria', 'Argelia', 'Jordania'],
+  K: ['Portugal', 'Colombia', 'Uzbekistán', 'Congo RD'],
+  L: ['Inglaterra', 'Croacia', 'Ghana', 'Panamá'],
 };
 const GRUPO_KEYS = Object.keys(GRUPOS);
 
-// Banderas (emoji) por selección. En el teléfono se ven como banderas reales.
+// Banderas (emoji) por selección.
 const FLAGS = {
-  'Argentina': '🇦🇷', 'México': '🇲🇽', 'Polonia': '🇵🇱', 'Arabia Saudita': '🇸🇦',
-  'Francia': '🇫🇷', 'Países Bajos': '🇳🇱', 'Senegal': '🇸🇳', 'Australia': '🇦🇺',
-  'Brasil': '🇧🇷', 'Suiza': '🇨🇭', 'Camerún': '🇨🇲', 'Serbia': '🇷🇸',
-  'Inglaterra': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Estados Unidos': '🇺🇸', 'Irán': '🇮🇷', 'Gales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿',
-  'España': '🇪🇸', 'Alemania': '🇩🇪', 'Japón': '🇯🇵', 'Costa Rica': '🇨🇷',
-  'Bélgica': '🇧🇪', 'Croacia': '🇭🇷', 'Marruecos': '🇲🇦', 'Canadá': '🇨🇦',
-  'Portugal': '🇵🇹', 'Uruguay': '🇺🇾', 'Corea del Sur': '🇰🇷', 'Ghana': '🇬🇭',
-  'Italia': '🇮🇹', 'Colombia': '🇨🇴', 'Ecuador': '🇪🇨', 'Nigeria': '🇳🇬',
+  'México': '🇲🇽', 'Corea del Sur': '🇰🇷', 'Chequia': '🇨🇿', 'Sudáfrica': '🇿🇦',
+  'Suiza': '🇨🇭', 'Canadá': '🇨🇦', 'Catar': '🇶🇦', 'Bosnia y Herzegovina': '🇧🇦',
+  'Brasil': '🇧🇷', 'Marruecos': '🇲🇦', 'Escocia': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Haití': '🇭🇹',
+  'Estados Unidos': '🇺🇸', 'Turquía': '🇹🇷', 'Paraguay': '🇵🇾', 'Australia': '🇦🇺',
+  'Alemania': '🇩🇪', 'Costa de Marfil': '🇨🇮', 'Ecuador': '🇪🇨', 'Curazao': '🇨🇼',
+  'Países Bajos': '🇳🇱', 'Japón': '🇯🇵', 'Suecia': '🇸🇪', 'Túnez': '🇹🇳',
+  'Bélgica': '🇧🇪', 'Egipto': '🇪🇬', 'Irán': '🇮🇷', 'Nueva Zelanda': '🇳🇿',
+  'España': '🇪🇸', 'Uruguay': '🇺🇾', 'Cabo Verde': '🇨🇻', 'Arabia Saudita': '🇸🇦',
+  'Francia': '🇫🇷', 'Senegal': '🇸🇳', 'Noruega': '🇳🇴', 'Irak': '🇮🇶',
+  'Argentina': '🇦🇷', 'Austria': '🇦🇹', 'Argelia': '🇩🇿', 'Jordania': '🇯🇴',
+  'Portugal': '🇵🇹', 'Colombia': '🇨🇴', 'Uzbekistán': '🇺🇿', 'Congo RD': '🇨🇩',
+  'Inglaterra': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Croacia': '🇭🇷', 'Ghana': '🇬🇭', 'Panamá': '🇵🇦',
 };
 const flag = (name) => FLAGS[name] || '🏳️';
 
 // Orden de los 6 partidos de cada grupo (round-robin)
 const PARES = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
 
-// --- Estructura del cuadro de eliminatorias ---
-// Referencias: "1A" = 1.º del grupo A; "WO1" = ganador del partido O1; "LS1" = perdedor de S1.
+// --- Cuadro de eliminatorias (formato 2026: 32 clasificados) ---
+// Referencias: "1A" = 1.º grupo A; "2A" = 2.º grupo A; "T1"..."T8" = mejores terceros (1.º al 8.º);
+// "WD1" = ganador del partido D1; "LS1" = perdedor de S1.
+//
+// NOTA: los emparejamientos 1.º/2.º y el reparto de terceros NO replican el Anexo C oficial
+// (495 combinaciones). Es un esquema simplificado pero válido de eliminación directa.
+const DIECISEIS = [
+  { id: 'D1', a: '1A', b: 'T1' }, { id: 'D2', a: '1B', b: 'T2' },
+  { id: 'D3', a: '1C', b: 'T3' }, { id: 'D4', a: '1D', b: 'T4' },
+  { id: 'D5', a: '1E', b: 'T5' }, { id: 'D6', a: '1F', b: 'T6' },
+  { id: 'D7', a: '1G', b: 'T7' }, { id: 'D8', a: '1H', b: 'T8' },
+  { id: 'D9', a: '1I', b: '2A' }, { id: 'D10', a: '1J', b: '2C' },
+  { id: 'D11', a: '1K', b: '2E' }, { id: 'D12', a: '1L', b: '2G' },
+  { id: 'D13', a: '2B', b: '2D' }, { id: 'D14', a: '2F', b: '2H' },
+  { id: 'D15', a: '2I', b: '2K' }, { id: 'D16', a: '2J', b: '2L' },
+];
 const OCTAVOS = [
-  { id: 'O1', a: '1A', b: '2B' },
-  { id: 'O2', a: '1C', b: '2D' },
-  { id: 'O3', a: '1E', b: '2F' },
-  { id: 'O4', a: '1G', b: '2H' },
-  { id: 'O5', a: '1B', b: '2A' },
-  { id: 'O6', a: '1D', b: '2C' },
-  { id: 'O7', a: '1F', b: '2E' },
-  { id: 'O8', a: '1H', b: '2G' },
+  { id: 'O1', a: 'WD1', b: 'WD2' }, { id: 'O2', a: 'WD3', b: 'WD4' },
+  { id: 'O3', a: 'WD5', b: 'WD6' }, { id: 'O4', a: 'WD7', b: 'WD8' },
+  { id: 'O5', a: 'WD9', b: 'WD10' }, { id: 'O6', a: 'WD11', b: 'WD12' },
+  { id: 'O7', a: 'WD13', b: 'WD14' }, { id: 'O8', a: 'WD15', b: 'WD16' },
 ];
 const CUARTOS = [
-  { id: 'C1', a: 'WO1', b: 'WO2' },
-  { id: 'C2', a: 'WO3', b: 'WO4' },
-  { id: 'C3', a: 'WO5', b: 'WO6' },
-  { id: 'C4', a: 'WO7', b: 'WO8' },
+  { id: 'C1', a: 'WO1', b: 'WO2' }, { id: 'C2', a: 'WO3', b: 'WO4' },
+  { id: 'C3', a: 'WO5', b: 'WO6' }, { id: 'C4', a: 'WO7', b: 'WO8' },
 ];
-const SEMIS = [
-  { id: 'S1', a: 'WC1', b: 'WC2' },
-  { id: 'S2', a: 'WC3', b: 'WC4' },
-];
+const SEMIS = [{ id: 'S1', a: 'WC1', b: 'WC2' }, { id: 'S2', a: 'WC3', b: 'WC4' }];
 const FINAL = { id: 'F1', a: 'WS1', b: 'WS2' };
-const TERCERO = { id: 'T3', a: 'LS1', b: 'LS2' };
+const BRONCE = { id: 'BR', a: 'LS1', b: 'LS2' };
 
 const COLUMNAS = [
+  { nombre: 'Dieciseisavos', partidos: DIECISEIS },
   { nombre: 'Octavos', partidos: OCTAVOS },
   { nombre: 'Cuartos', partidos: CUARTOS },
   { nombre: 'Semifinales', partidos: SEMIS },
   { nombre: 'Final', partidos: [FINAL] },
 ];
-const TODOS_KO = [...OCTAVOS, ...CUARTOS, ...SEMIS, FINAL, TERCERO];
+const TODOS_KO = [...DIECISEIS, ...OCTAVOS, ...CUARTOS, ...SEMIS, FINAL, BRONCE];
 const getKODef = (id) => TODOS_KO.find((m) => m.id === id);
 
-const STORAGE_KEY = 'mundial-scores-v1';
+const STORAGE_KEY = 'mundial-scores-v2';
 
-// Convierte el valor de un input a número, o null si está vacío/ inválido.
 const num = (v) => (v === '' || v === null || v === undefined || isNaN(v) ? null : parseInt(v, 10));
 
-// Abre la búsqueda en Google en otra pestaña.
 const buscarEnGoogle = (consulta) => {
   const q = encodeURIComponent(consulta);
   window.open(`https://www.google.com/search?q=${q}`, '_blank', 'noopener,noreferrer');
 };
 
 export default function Scoreboard() {
-  const [groupScores, setGroupScores] = useState({}); // { "A-0": {s1,s2}, ... }
-  const [koScores, setKoScores] = useState({}); // { "O1": {s1,s2,p1,p2}, ... }
-  const [vista, setVista] = useState('grupos'); // 'grupos' | 'llaves'
+  const [groupScores, setGroupScores] = useState({});
+  const [koScores, setKoScores] = useState({});
+  const [vista, setVista] = useState('grupos');
   const [busqueda, setBusqueda] = useState('');
 
-  // Cargar datos guardados al iniciar.
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -95,7 +106,6 @@ export default function Scoreboard() {
     }
   }, []);
 
-  // Guardar automáticamente ante cualquier cambio.
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ groupScores, koScores }));
@@ -119,7 +129,7 @@ export default function Scoreboard() {
     }
   }, []);
 
-  // --- Tablas de posiciones (se recalculan solas con cada gol) ---
+  // --- Tablas de posiciones ---
   const standings = useMemo(() => {
     const tablas = {};
     GRUPO_KEYS.forEach((g) => {
@@ -148,13 +158,27 @@ export default function Scoreboard() {
     return tablas;
   }, [groupScores]);
 
+  // --- Ranking de terceros (los 8 mejores clasifican) ---
+  const thirds = useMemo(() => {
+    const arr = GRUPO_KEYS.map((g) => ({ ...standings[g][2], grupo: g }));
+    arr.sort((a, b) => b.pts - a.pts || b.dg - a.dg || b.gf - a.gf || a.grupo.localeCompare(b.grupo));
+    return arr; // 12 terceros; los primeros 8 avanzan
+  }, [standings]);
+
+  const qualifyingThirds = useMemo(
+    () => new Set(thirds.slice(0, 8).map((t) => t.equipo)),
+    [thirds]
+  );
+
   // Resuelve qué equipo ocupa un "slot".
   const resolveSlot = useCallback(
     (ref) => {
-      if (/^[12][A-H]$/.test(ref)) {
+      if (/^[12][A-L]$/.test(ref)) {
         const pos = Number(ref[0]) - 1;
-        const g = ref[1];
-        return standings[g]?.[pos]?.equipo ?? null;
+        return standings[ref[1]]?.[pos]?.equipo ?? null;
+      }
+      if (/^T\d{1,2}$/.test(ref)) {
+        return thirds[Number(ref.slice(1)) - 1]?.equipo ?? null;
       }
       if (ref[0] === 'W' || ref[0] === 'L') {
         const r = resolveKO(ref.slice(1));
@@ -162,10 +186,9 @@ export default function Scoreboard() {
       }
       return null;
     },
-    [standings, koScores] // eslint-disable-line react-hooks/exhaustive-deps
+    [standings, thirds, koScores] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // Resuelve un partido de eliminatorias (equipos, marcador, ganador, perdedor).
   const resolveKO = useCallback(
     (id) => {
       const def = getKODef(id);
@@ -199,11 +222,11 @@ export default function Scoreboard() {
       <a className="pitch__back" href="#">&larr; Volver al CRM</a>
 
       <header className="pitch__hero">
-        <span className="pitch__live"><span className="pitch__dot" /> En vivo</span>
+        <span className="pitch__live"><span className="pitch__dot" /> Mundial 2026</span>
         <h1 className="pitch__title">El Mundial<em>en tus manos</em></h1>
         <p className="pitch__sub">
           Consulta el resultado real en Google, escríbelo, y mira cómo las tablas de grupo y el
-          cuadro de llaves se reordenan solos. Todo se guarda en tu teléfono.
+          cuadro se reordenan solos. Todo se guarda en tu teléfono.
         </p>
       </header>
 
@@ -213,11 +236,11 @@ export default function Scoreboard() {
           placeholder="Buscar partido en Google…"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && busqueda.trim()) buscarEnGoogle(`${busqueda} resultado mundial`); }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && busqueda.trim()) buscarEnGoogle(`${busqueda} resultado mundial 2026`); }}
         />
         <button
           className="pitch__search-btn"
-          onClick={() => busqueda.trim() && buscarEnGoogle(`${busqueda} resultado mundial`)}
+          onClick={() => busqueda.trim() && buscarEnGoogle(`${busqueda} resultado mundial 2026`)}
         >
           🔎<span>&nbsp;Buscar</span>
         </button>
@@ -236,7 +259,8 @@ export default function Scoreboard() {
       <main className="pitch__grid">
         {vista === 'grupos' ? (
           GRUPO_KEYS.map((g, i) => (
-            <Grupo key={g} grupo={g} index={i} tabla={standings[g]} groupScores={groupScores} setGoles={setGoles} />
+            <Grupo key={g} grupo={g} index={i} tabla={standings[g]} groupScores={groupScores}
+              setGoles={setGoles} qualifyingThirds={qualifyingThirds} />
           ))
         ) : (
           <section className="card bracket-card">
@@ -245,6 +269,10 @@ export default function Scoreboard() {
               <span className="card__rule" />
             </div>
             <p className="bracket-hint">Desliza para ver todo el cuadro →</p>
+            <p className="bracket-note">
+              Formato 2026: clasifican los 2 primeros de cada grupo + los 8 mejores terceros (32 equipos).
+              El reparto exacto de los terceros (Anexo C) está simplificado.
+            </p>
 
             <div className="bracket">
               {COLUMNAS.map((col) => (
@@ -263,7 +291,7 @@ export default function Scoreboard() {
 
             <div className="third">
               <div className="third__name">🥉 Tercer puesto</div>
-              <BracketMatch def={TERCERO} estado={resolveKO(TERCERO.id)} setKO={setKO} koScores={koScores} />
+              <BracketMatch def={BRONCE} estado={resolveKO(BRONCE.id)} setKO={setKO} koScores={koScores} />
             </div>
           </section>
         )}
@@ -272,11 +300,11 @@ export default function Scoreboard() {
   );
 }
 
-// --- Componente: tarjeta de un grupo (tabla + partidos editables) ---
-function Grupo({ grupo, index, tabla, groupScores, setGoles }) {
+// --- Tarjeta de un grupo ---
+function Grupo({ grupo, index, tabla, groupScores, setGoles, qualifyingThirds }) {
   const equipos = GRUPOS[grupo];
   return (
-    <section className="card" style={{ animationDelay: `${index * 60}ms` }}>
+    <section className="card" style={{ animationDelay: `${index * 45}ms` }}>
       <div className="card__head">
         <span className="card__tag">Grupo <b>{grupo}</b></span>
         <span className="card__rule" />
@@ -290,23 +318,26 @@ function Grupo({ grupo, index, tabla, groupScores, setGoles }) {
           </tr>
         </thead>
         <tbody>
-          {tabla?.map((t, i) => (
-            <tr key={t.equipo} className={i < 2 ? 'row-q' : undefined}>
-              <td className="col-team">
-                <span className="team-cell">
-                  <span className="pos">{i + 1}</span>
-                  <span className="flag">{flag(t.equipo)}</span>
-                  <span className="team-name">{t.equipo}</span>
-                </span>
-              </td>
-              <td>{t.pj}</td>
-              <td>{t.g}</td>
-              <td>{t.e}</td>
-              <td>{t.p}</td>
-              <td>{t.dg > 0 ? `+${t.dg}` : t.dg}</td>
-              <td className="pts">{t.pts}</td>
-            </tr>
-          ))}
+          {tabla?.map((t, i) => {
+            const cls = i < 2 ? 'row-q' : (i === 2 && qualifyingThirds.has(t.equipo) ? 'row-q3' : undefined);
+            return (
+              <tr key={t.equipo} className={cls}>
+                <td className="col-team">
+                  <span className="team-cell">
+                    <span className="pos">{i + 1}</span>
+                    <span className="flag">{flag(t.equipo)}</span>
+                    <span className="team-name">{t.equipo}</span>
+                  </span>
+                </td>
+                <td>{t.pj}</td>
+                <td>{t.g}</td>
+                <td>{t.e}</td>
+                <td>{t.p}</td>
+                <td>{t.dg > 0 ? `+${t.dg}` : t.dg}</td>
+                <td className="pts">{t.pts}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
@@ -330,7 +361,7 @@ function Grupo({ grupo, index, tabla, groupScores, setGoles }) {
                 <span className="nm">{equipos[j]}</span>
               </span>
               <button className="search-mini" title="Buscar en Google"
-                onClick={() => buscarEnGoogle(`${equipos[i]} vs ${equipos[j]} resultado mundial`)}>🔎</button>
+                onClick={() => buscarEnGoogle(`${equipos[i]} vs ${equipos[j]} resultado mundial 2026`)}>🔎</button>
             </div>
           );
         })}
@@ -339,7 +370,7 @@ function Grupo({ grupo, index, tabla, groupScores, setGoles }) {
   );
 }
 
-// --- Componente: partido del cuadro (dos filas apiladas con bandera) ---
+// --- Partido del cuadro (dos filas apiladas con bandera) ---
 function BracketMatch({ def, estado, setKO, koScores }) {
   const sc = koScores[def.id] || {};
   const { teamA, teamB, winner } = estado;
@@ -349,7 +380,7 @@ function BracketMatch({ def, estado, setKO, koScores }) {
   return (
     <div className={`bm${esFinal && winner ? ' bm--champ' : ''}`}>
       <button className="bm__search" title="Buscar en Google"
-        onClick={() => buscarEnGoogle(`${teamA || ''} vs ${teamB || ''} resultado mundial`)}>🔎</button>
+        onClick={() => buscarEnGoogle(`${teamA || ''} vs ${teamB || ''} resultado mundial 2026`)}>🔎</button>
 
       <div className={`bm__row${winA ? ' bm__row--win' : ''}`}>
         <span className="flag">{teamA ? flag(teamA) : '⚽'}</span>

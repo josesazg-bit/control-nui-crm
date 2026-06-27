@@ -276,8 +276,9 @@
   background: rgba(255, 255, 255, 0.05);
 }
 .row-q .pos { color: #08120a; background: var(--lime); }
+.row-q3 .pos { color: #08120a; background: var(--gold); }
 .team-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row-q .team-name { font-weight: 600; }
+.row-q .team-name, .row-q3 .team-name { font-weight: 600; }
 
 /* ---------- Partidos editables (grupos) ---------- */
 .matches { display: flex; flex-direction: column; gap: 8px; }
@@ -354,7 +355,14 @@
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin: 0 0 10px;
+  margin: 0 0 6px;
+}
+.bracket-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+  max-width: 60ch;
 }
 .bracket {
   --col: clamp(172px, 54vw, 218px);
