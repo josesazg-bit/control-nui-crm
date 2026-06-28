@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import { 
   Search, TrendingUp, Activity, Save, Edit, UserPlus, CheckCircle, XCircle,
-  Layout, List, Loader2, Trash2, Database, Calendar, Layers, Wifi, ShieldCheck, Fingerprint, FileUp, MoreHorizontal, DollarSign, Download, Filter, Phone, Clock
+  Layout, List, Loader2, Trash2, Database, Calendar, Layers, Wifi, ShieldCheck, Fingerprint, FileUp, MoreHorizontal, DollarSign, Download, Filter, Phone, Clock, Trophy
 } from 'lucide-react';
 
 // --- CONFIGURACIÓN DE FIREBASE ---
@@ -348,6 +348,10 @@ export default function App() {
             </div>
         </div>
         <div className="flex items-center gap-3">
+            {/* BOTÓN MARCADORES MUNDIAL */}
+            <a href="#scoreboard" className="bg-[#005A9C] text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-[#004375] transition-colors shadow-sm no-underline">
+                <Trophy size={16}/> MUNDIAL
+            </a>
             {/* BOTÓN EXCEL */}
             <button onClick={handleExportExcel} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-emerald-700 transition-colors shadow-sm">
                 <Download size={16}/> EXCEL
