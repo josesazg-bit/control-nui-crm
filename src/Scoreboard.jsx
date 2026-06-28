@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import './Scoreboard.css';
+import { ANNEX_C } from './annexC';
 
 // --- Grupos oficiales del Mundial 2026 (sorteo del 5 dic 2025, 48 equipos / 12 grupos) ---
 const GRUPOS = {
@@ -18,7 +19,6 @@ const GRUPOS = {
 };
 const GRUPO_KEYS = Object.keys(GRUPOS);
 
-// Banderas (emoji) por selección.
 const FLAGS = {
   'México': '🇲🇽', 'Corea del Sur': '🇰🇷', 'Chequia': '🇨🇿', 'Sudáfrica': '🇿🇦',
   'Suiza': '🇨🇭', 'Canadá': '🇨🇦', 'Catar': '🇶🇦', 'Bosnia y Herzegovina': '🇧🇦',
@@ -38,35 +38,35 @@ const flag = (name) => FLAGS[name] || '🏳️';
 // Orden de los 6 partidos de cada grupo (round-robin)
 const PARES = [[0, 1], [2, 3], [0, 2], [1, 3], [0, 3], [1, 2]];
 
-// --- Cuadro de eliminatorias (formato 2026: 32 clasificados) ---
-// Referencias: "1A" = 1.º grupo A; "2A" = 2.º grupo A; "T1"..."T8" = mejores terceros (1.º al 8.º);
-// "WD1" = ganador del partido D1; "LS1" = perdedor de S1.
-//
-// NOTA: los emparejamientos 1.º/2.º y el reparto de terceros NO replican el Anexo C oficial
-// (495 combinaciones). Es un esquema simplificado pero válido de eliminación directa.
+// --- Cuadro de eliminatorias OFICIAL del Mundial 2026 (art. 12.6–12.11 del reglamento) ---
+// Referencias: "1A"/"2A" = 1.º/2.º del grupo A; "TX" = mejor tercero asignado a la casilla del
+// ganador del grupo X según el Anexo C; "W73" = ganador del partido 73; "L101" = perdedor del 101.
+// Las columnas de cada ronda van en el orden visual del cuadro (para que los conectores alineen).
+const COLS_TERCEROS = ['A', 'B', 'D', 'E', 'G', 'I', 'K', 'L']; // ganadores que enfrentan a un tercero
+
 const DIECISEIS = [
-  { id: 'D1', a: '1A', b: 'T1' }, { id: 'D2', a: '1B', b: 'T2' },
-  { id: 'D3', a: '1C', b: 'T3' }, { id: 'D4', a: '1D', b: 'T4' },
-  { id: 'D5', a: '1E', b: 'T5' }, { id: 'D6', a: '1F', b: 'T6' },
-  { id: 'D7', a: '1G', b: 'T7' }, { id: 'D8', a: '1H', b: 'T8' },
-  { id: 'D9', a: '1I', b: '2A' }, { id: 'D10', a: '1J', b: '2C' },
-  { id: 'D11', a: '1K', b: '2E' }, { id: 'D12', a: '1L', b: '2G' },
-  { id: 'D13', a: '2B', b: '2D' }, { id: 'D14', a: '2F', b: '2H' },
-  { id: 'D15', a: '2I', b: '2K' }, { id: 'D16', a: '2J', b: '2L' },
+  { id: '74', a: '1E', b: 'TE' }, { id: '77', a: '1I', b: 'TI' },
+  { id: '73', a: '2A', b: '2B' }, { id: '75', a: '1F', b: '2C' },
+  { id: '83', a: '2K', b: '2L' }, { id: '84', a: '1H', b: '2J' },
+  { id: '81', a: '1D', b: 'TD' }, { id: '82', a: '1G', b: 'TG' },
+  { id: '76', a: '1C', b: '2F' }, { id: '78', a: '2E', b: '2I' },
+  { id: '79', a: '1A', b: 'TA' }, { id: '80', a: '1L', b: 'TL' },
+  { id: '86', a: '1J', b: '2H' }, { id: '88', a: '2D', b: '2G' },
+  { id: '85', a: '1B', b: 'TB' }, { id: '87', a: '1K', b: 'TK' },
 ];
 const OCTAVOS = [
-  { id: 'O1', a: 'WD1', b: 'WD2' }, { id: 'O2', a: 'WD3', b: 'WD4' },
-  { id: 'O3', a: 'WD5', b: 'WD6' }, { id: 'O4', a: 'WD7', b: 'WD8' },
-  { id: 'O5', a: 'WD9', b: 'WD10' }, { id: 'O6', a: 'WD11', b: 'WD12' },
-  { id: 'O7', a: 'WD13', b: 'WD14' }, { id: 'O8', a: 'WD15', b: 'WD16' },
+  { id: '89', a: 'W74', b: 'W77' }, { id: '90', a: 'W73', b: 'W75' },
+  { id: '93', a: 'W83', b: 'W84' }, { id: '94', a: 'W81', b: 'W82' },
+  { id: '91', a: 'W76', b: 'W78' }, { id: '92', a: 'W79', b: 'W80' },
+  { id: '95', a: 'W86', b: 'W88' }, { id: '96', a: 'W85', b: 'W87' },
 ];
 const CUARTOS = [
-  { id: 'C1', a: 'WO1', b: 'WO2' }, { id: 'C2', a: 'WO3', b: 'WO4' },
-  { id: 'C3', a: 'WO5', b: 'WO6' }, { id: 'C4', a: 'WO7', b: 'WO8' },
+  { id: '97', a: 'W89', b: 'W90' }, { id: '98', a: 'W93', b: 'W94' },
+  { id: '99', a: 'W91', b: 'W92' }, { id: '100', a: 'W95', b: 'W96' },
 ];
-const SEMIS = [{ id: 'S1', a: 'WC1', b: 'WC2' }, { id: 'S2', a: 'WC3', b: 'WC4' }];
-const FINAL = { id: 'F1', a: 'WS1', b: 'WS2' };
-const BRONCE = { id: 'BR', a: 'LS1', b: 'LS2' };
+const SEMIS = [{ id: '101', a: 'W97', b: 'W98' }, { id: '102', a: 'W99', b: 'W100' }];
+const FINAL = { id: '104', a: 'W101', b: 'W102' };
+const BRONCE = { id: '103', a: 'L101', b: 'L102' };
 
 const COLUMNAS = [
   { nombre: 'Dieciseisavos', partidos: DIECISEIS },
@@ -170,6 +170,16 @@ export default function Scoreboard() {
     [thirds]
   );
 
+  // Asignación oficial de terceros (Anexo C): grupo del ganador -> grupo del tercero que enfrenta.
+  const annexAssignment = useMemo(() => {
+    const top8 = thirds.slice(0, 8).map((t) => t.grupo);
+    const key = [...top8].sort().join('');
+    const val = ANNEX_C[key];
+    const map = {};
+    if (val) COLS_TERCEROS.forEach((c, i) => { map[c] = val[i]; });
+    return map;
+  }, [thirds]);
+
   // Resuelve qué equipo ocupa un "slot".
   const resolveSlot = useCallback(
     (ref) => {
@@ -177,8 +187,9 @@ export default function Scoreboard() {
         const pos = Number(ref[0]) - 1;
         return standings[ref[1]]?.[pos]?.equipo ?? null;
       }
-      if (/^T\d{1,2}$/.test(ref)) {
-        return thirds[Number(ref.slice(1)) - 1]?.equipo ?? null;
+      if (/^T[A-L]$/.test(ref)) {
+        const g = annexAssignment[ref[1]];
+        return g ? (standings[g]?.[2]?.equipo ?? null) : null;
       }
       if (ref[0] === 'W' || ref[0] === 'L') {
         const r = resolveKO(ref.slice(1));
@@ -186,7 +197,7 @@ export default function Scoreboard() {
       }
       return null;
     },
-    [standings, thirds, koScores] // eslint-disable-line react-hooks/exhaustive-deps
+    [standings, thirds, annexAssignment, koScores] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const resolveKO = useCallback(
@@ -270,8 +281,8 @@ export default function Scoreboard() {
             </div>
             <p className="bracket-hint">Desliza para ver todo el cuadro →</p>
             <p className="bracket-note">
-              Formato 2026: clasifican los 2 primeros de cada grupo + los 8 mejores terceros (32 equipos).
-              El reparto exacto de los terceros (Anexo C) está simplificado.
+              Cuadro oficial 2026: 2 primeros de cada grupo + 8 mejores terceros (32 equipos). El
+              reparto de los terceros sigue el Anexo C oficial del reglamento FIFA (495 combinaciones).
             </p>
 
             <div className="bracket">
@@ -374,7 +385,7 @@ function Grupo({ grupo, index, tabla, groupScores, setGoles, qualifyingThirds })
 function BracketMatch({ def, estado, setKO, koScores }) {
   const sc = koScores[def.id] || {};
   const { teamA, teamB, winner } = estado;
-  const esFinal = def.id === 'F1';
+  const esFinal = def.id === '104';
   const winA = winner && winner === teamA;
   const winB = winner && winner === teamB;
   return (
